@@ -1,0 +1,10 @@
+# Core runtime
+mcp>=1.9,<2              # Official MCP Python SDK; 1.x ships mcp.server.fastmcp.FastMCP
+anthropic>=1.0,<2        # Claude API (orchestration + code generation)
+pydantic>=2.7,<3         # Strict schemas for state, tool specs and reflection
+httpx>=0.27,<1           # HTTP client used by synthesized tools
+anyio>=4.4,<5            # Transport layer used by the MCP SDK
+
+# Dev / test
+pytest>=8,<10
+pytest-asyncio>=0.23,<2
