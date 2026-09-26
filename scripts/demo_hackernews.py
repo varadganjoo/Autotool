@@ -2,7 +2,8 @@
 verify it in a subprocess, hot-load it, and print the top 3 stories.
 
 Modes:
-  --mode live     Claude (Anthropic API) writes the tool; it calls the real HN API.
+  --mode live     A real LLM (OpenAI by default when OPENAI_API_KEY is set, or
+                  Claude via --provider anthropic) writes the tool; it calls the real HN API.
   --mode offline  No API key / network needed. A *scripted* LLM replays a fixed
                   sequence (including one deliberately broken first draft to
                   exercise the repair loop) and the tool talks to a local
@@ -27,7 +28,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from autotool.core.llm import AnthropicProvider, ScriptedProvider  # noqa: E402
+from autotool.core.llm import ScriptedProvider, default_provider  # noqa: E402
 from autotool.core.orchestrator import SYNTHESIZE_TOOL  # noqa: E402
 from autotool.core.schema import GeneratedToolCandidate, LLMTurn, ToolCall  # noqa: E402
 from autotool.main import run_objective  # noqa: E402
@@ -163,7 +164,7 @@ def build_scripted_provider() -> ScriptedProvider:
 
 
 def live_available() -> bool:
-    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+    if not any(os.environ.get(k) for k in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")):
         return False
     try:
         import httpx
@@ -177,6 +178,8 @@ def live_available() -> bool:
 async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["auto", "live", "offline"], default="auto")
+    parser.add_argument("--provider", choices=["openai", "anthropic"], default=None)
+    parser.add_argument("--model", default=None)
     parser.add_argument("--tools-dir", default=str(ROOT / "tools"))
     parser.add_argument("--keep-cache", action="store_true", help="Do not delete an existing hackernews_tool.py first")
     args = parser.parse_args()
@@ -195,8 +198,8 @@ async def main() -> int:
         provider: Any = build_scripted_provider()
         print(f"== OFFLINE REPLAY: scripted LLM + local HN fixture at {base} ==", file=sys.stderr)
     else:
-        provider = AnthropicProvider()
-        print(f"== LIVE: {provider.model} + real Hacker News API ==", file=sys.stderr)
+        provider = default_provider(args.provider, args.model)
+        print(f"== LIVE: {type(provider).__name__} ({provider.model}) + real Hacker News API ==", file=sys.stderr)
 
     try:
         result = await run_objective(PROMPT, provider=provider, tools_dir=str(tools_dir), env_overrides=env_overrides)

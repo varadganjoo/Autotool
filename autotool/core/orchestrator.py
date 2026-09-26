@@ -118,7 +118,7 @@ class Orchestrator:
                     result = await self.registry.call(call.id, call.name, call.arguments)
                 self._emit(events, "tool_result", name=call.name, is_error=result.is_error, content=result.content[:2000])
                 results.append(result)
-            self.messages.append(self.provider.tool_results_message(results))
+            self.messages.extend(self.provider.tool_results_messages(results))
 
         raise RuntimeError(f"Agent did not finish within {self.max_steps} steps")
 

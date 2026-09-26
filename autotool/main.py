@@ -7,7 +7,7 @@ import asyncio
 import logging
 import sys
 
-from autotool.core.llm import DEFAULT_MODEL, AnthropicProvider, LLMProvider
+from autotool.core.llm import LLMProvider, default_provider
 from autotool.core.orchestrator import Orchestrator, RunEvent, RunResult
 from autotool.core.registry import ToolRegistry
 from autotool.synthesis.repair import SynthesisEngine
@@ -53,18 +53,27 @@ async def run_objective(
 def cli(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="autotool", description="Self-synthesizing MCP agent runtime")
     parser.add_argument("prompt", help="Objective for the agent")
-    parser.add_argument("--model", default=None, help=f"Claude model id (default: $AUTOTOOL_MODEL or {DEFAULT_MODEL})")
+    parser.add_argument(
+        "--provider",
+        choices=["openai", "anthropic"],
+        default=None,
+        help="LLM backend (default: $AUTOTOOL_PROVIDER, else openai if OPENAI_API_KEY is set, else anthropic)",
+    )
+    parser.add_argument("--model", default=None, help="Model id (default: $AUTOTOOL_OPENAI_MODEL / $AUTOTOOL_MODEL)")
+    parser.add_argument("--reasoning-effort", default=None, help="OpenAI reasoning effort, e.g. low|medium|high")
     parser.add_argument("--tools-dir", default="tools")
     parser.add_argument("--staging-dir", default=".staging")
     parser.add_argument("--timeout", type=float, default=15.0, help="Verification timeout in seconds")
     parser.add_argument("--max-retries", type=int, default=3)
-    parser.add_argument("--no-fallbacks", action="store_true", help="Disable server-side refusal fallbacks")
+    parser.add_argument("--no-fallbacks", action="store_true", help="Anthropic only: disable server-side refusal fallbacks")
     parser.add_argument("-q", "--quiet", action="store_true")
     parser.add_argument("--log-level", default="WARNING")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=args.log_level.upper(), format="%(levelname)s %(name)s: %(message)s")
-    provider = AnthropicProvider(args.model, use_fallbacks=not args.no_fallbacks)
+    provider = default_provider(
+        args.provider, args.model, reasoning_effort=args.reasoning_effort, use_fallbacks=not args.no_fallbacks
+    )
     result = asyncio.run(
         run_objective(
             args.prompt,
