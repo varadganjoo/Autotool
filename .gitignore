@@ -6,3 +6,4 @@ __pycache__/
 *.egg-info/
 tools/*.py
 !tools/__init__.py
+results/

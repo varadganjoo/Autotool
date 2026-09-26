@@ -30,6 +30,19 @@ class LLMRefusalError(RuntimeError):
     pass
 
 
+class UsageStats(BaseModel):
+    """Cumulative token usage across every request a provider made."""
+
+    calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+    def add(self, input_tokens: int | None, output_tokens: int | None) -> None:
+        self.calls += 1
+        self.input_tokens += input_tokens or 0
+        self.output_tokens += output_tokens or 0
+
+
 class LLMProvider(Protocol):
     async def complete(self, *, system: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> LLMTurn: ...
 
@@ -72,6 +85,11 @@ class AnthropicProvider(_AnthropicFormatMixin):
         self.max_tokens = max_tokens
         self.use_fallbacks = use_fallbacks
         self.client = client or anthropic.AsyncAnthropic()
+        self.usage = UsageStats()
+
+    def _record(self, response: Any) -> None:
+        u = getattr(response, "usage", None)
+        self.usage.add(getattr(u, "input_tokens", 0), getattr(u, "output_tokens", 0))
 
     def _extra(self) -> dict[str, Any]:
         if not self.use_fallbacks:
@@ -87,6 +105,7 @@ class AnthropicProvider(_AnthropicFormatMixin):
             tools=tools,
             **self._extra(),
         )
+        self._record(response)
         if response.stop_reason == "refusal":
             raise LLMRefusalError(f"Model declined the request: {response.stop_details}")
         text = "".join(b.text for b in response.content if b.type == "text")
@@ -108,6 +127,7 @@ class AnthropicProvider(_AnthropicFormatMixin):
             output_format=output_model,
             **self._extra(),
         )
+        self._record(response)
         if response.stop_reason == "refusal":
             raise LLMRefusalError(f"Model declined the request: {response.stop_details}")
         if response.parsed_output is None:
@@ -121,9 +141,16 @@ class OpenAIProvider:
     def __init__(self, model: str | None = None, *, client: Any = None, reasoning_effort: str | None = None) -> None:
         import openai
 
-        self.model = model or os.environ.get("AUTOTOOL_OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
+        self.model = (
+            model or os.environ.get("AUTOTOOL_OPENAI_MODEL") or os.environ.get("OPENAI_LLM") or DEFAULT_OPENAI_MODEL
+        )
         self.reasoning_effort = reasoning_effort
         self.client = client or openai.AsyncOpenAI()
+        self.usage = UsageStats()
+
+    def _record(self, response: Any) -> None:
+        u = getattr(response, "usage", None)
+        self.usage.add(getattr(u, "prompt_tokens", 0), getattr(u, "completion_tokens", 0))
 
     def _extra(self) -> dict[str, Any]:
         return {"reasoning_effort": self.reasoning_effort} if self.reasoning_effort else {}
@@ -145,6 +172,7 @@ class OpenAIProvider:
             tools=self._tools(tools) or None,
             **self._extra(),
         )
+        self._record(response)
         choice = response.choices[0]
         msg = choice.message
         if getattr(msg, "refusal", None):
@@ -174,6 +202,7 @@ class OpenAIProvider:
             response_format=output_model,
             **self._extra(),
         )
+        self._record(response)
         msg = response.choices[0].message
         if msg.refusal:
             raise LLMRefusalError(f"Model declined the request: {msg.refusal}")
@@ -216,6 +245,8 @@ class ScriptedProvider(_AnthropicFormatMixin):
     def __init__(self, chat: ChatHandler, structured: StructuredHandler) -> None:
         self._chat = chat
         self._structured = structured
+        self.model = "scripted"
+        self.usage = UsageStats()
 
     async def complete(self, *, system: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> LLMTurn:
         turn = self._chat(messages, tools)

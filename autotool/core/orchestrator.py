@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any, Callable
 
 from pydantic import BaseModel, Field, ValidationError
@@ -62,6 +63,7 @@ class RunResult(BaseModel):
     answer: str
     steps: int
     synthesized: list[str] = Field(default_factory=list)
+    elapsed_s: float = 0.0
     events: list[RunEvent] = Field(default_factory=list)
 
 
@@ -97,6 +99,7 @@ class Orchestrator:
         self.messages.append({"role": "user", "content": prompt})
         events: list[RunEvent] = []
         synthesized: list[str] = []
+        started = time.monotonic()
 
         for step in range(1, self.max_steps + 1):
             # Tool list is rebuilt every step so freshly mounted tools are visible immediately.
@@ -107,7 +110,9 @@ class Orchestrator:
 
             if not turn.tool_calls:
                 self._emit(events, "final", text=turn.text)
-                return RunResult(answer=turn.text, steps=step, synthesized=synthesized, events=events)
+                return RunResult(
+                    answer=turn.text, steps=step, synthesized=synthesized, elapsed_s=time.monotonic() - started, events=events
+                )
 
             results: list[ToolResult] = []
             for call in turn.tool_calls:
@@ -135,6 +140,7 @@ class Orchestrator:
             return ToolResult(call_id=call.id, content="Synthesis budget for this run is exhausted.", is_error=True)
 
         cached = self.engine.cached_path(request.tool_name)
+        started = time.monotonic()
         try:
             if cached.exists():
                 path, attempts, origin = cached, 0, "loaded from cache"
@@ -144,13 +150,19 @@ class Orchestrator:
                 synthesized.append(request.tool_name)
             await self.registry.mount(path)
         except SynthesisError as exc:
-            self._emit(events, "synthesis", tool_name=request.tool_name, ok=False, attempts=exc.attempts, stage=exc.report.stage)
+            self._emit(
+                events, "synthesis", tool_name=request.tool_name, ok=False, attempts=exc.attempts,
+                stage=exc.report.stage, error=exc.report.error, elapsed_s=time.monotonic() - started,
+            )
             return ToolResult(call_id=call.id, content=str(exc), is_error=True)
         except Exception as exc:  # noqa: BLE001 - report to the LLM rather than crash the run
             self._emit(events, "synthesis", tool_name=request.tool_name, ok=False, error=str(exc))
             return ToolResult(call_id=call.id, content=f"Failed to build or mount tool: {type(exc).__name__}: {exc}", is_error=True)
 
-        self._emit(events, "synthesis", tool_name=request.tool_name, ok=True, attempts=attempts, path=str(path))
+        self._emit(
+            events, "synthesis", tool_name=request.tool_name, ok=True, attempts=attempts, path=str(path),
+            elapsed_s=time.monotonic() - started,
+        )
         return ToolResult(call_id=call.id, content=self._describe_server(request.tool_name, origin))
 
     def _describe_server(self, server: str, origin: str) -> str:
