@@ -70,7 +70,7 @@ class ToolRegistry:
         for server in list(self._clients):
             try:
                 await self.unmount(server)
-            except Exception as exc:  # noqa: BLE001
+            except BaseException as exc:
                 log.warning("Error closing %s: %s", server, exc)
 
     # ---- introspection --------------------------------------------------

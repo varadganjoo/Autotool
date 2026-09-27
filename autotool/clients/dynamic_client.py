@@ -144,7 +144,10 @@ class DynamicMCPClient:
         """Close the session; the stdio transport terminates the child process."""
         stack, self._stack, self._session = self._stack, None, None
         if stack is not None:
-            await stack.aclose()
+            try:
+                await stack.aclose()
+            except BaseException:
+                pass
 
     def _require_session(self) -> ClientSession:
         if self._session is None:

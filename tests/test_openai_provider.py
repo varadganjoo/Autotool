@@ -19,22 +19,40 @@ from autotool.synthesis.verifier import ToolVerifier
 from tests.test_synthesis import GOOD
 
 
-def completion(message: dict[str, Any], finish_reason: str = "stop") -> dict[str, Any]:
+def response_item(output_items: list[dict[str, Any]]) -> dict[str, Any]:
     return {
-        "id": "chatcmpl-test",
-        "object": "chat.completion",
-        "created": 0,
+        "id": "resp-test",
+        "object": "response",
+        "created_at": 0,
         "model": "gpt-test",
-        "choices": [{"index": 0, "message": {"role": "assistant", **message}, "finish_reason": finish_reason}],
+        "status": "completed",
+        "output": output_items,
     }
 
 
-def tool_call(call_id: str, name: str, args: dict[str, Any]) -> dict[str, Any]:
-    return {"id": call_id, "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}
+def text_item(text: str) -> dict[str, Any]:
+    return {
+        "id": "msg-test",
+        "type": "message",
+        "role": "assistant",
+        "status": "completed",
+        "content": [{"type": "output_text", "text": text}],
+    }
+
+
+def tool_call_item(call_id: str, name: str, args: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": "fc-test",
+        "type": "function_call",
+        "call_id": call_id,
+        "name": name,
+        "arguments": json.dumps(args),
+        "status": "completed",
+    }
 
 
 class FakeOpenAI:
-    """Minimal stateful stand-in for the Chat Completions endpoint."""
+    """Minimal stateful stand-in for the Responses endpoint."""
 
     def __init__(self) -> None:
         self.requests: list[dict[str, Any]] = []
@@ -42,30 +60,30 @@ class FakeOpenAI:
     def __call__(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
         self.requests.append(body)
-        assert request.url.path.endswith("/chat/completions")
-        assert body["messages"][0]["role"] == "system"
+        assert request.url.path.endswith("/responses")
+        assert "instructions" in body
 
-        if "response_format" in body:  # structured output: the tool generator
-            schema = body["response_format"]["json_schema"]
-            assert schema["strict"] is True and schema["name"] == "GeneratedToolCandidate"
+        if "text" in body and body["text"].get("format"):  # structured output: the tool generator
+            schema = body["text"]["format"]
+            assert schema["name"] == "GeneratedToolCandidate"
             payload = {"code": GOOD, "primary_tool": "add", "smoke_test_arguments_json": '{"a": 1, "b": 2}'}
-            return httpx.Response(200, json=completion({"content": json.dumps(payload)}))
+            return httpx.Response(200, json=response_item([text_item(json.dumps(payload))]))
 
-        tool_names = {t["function"]["name"] for t in body.get("tools", [])}
-        last = body["messages"][-1]
-        if last["role"] == "user":
+        tool_names = {t["name"] for t in body.get("tools", [])}
+        last = body["input"][-1]
+        if last.get("role") == "user":
             assert tool_names == {SYNTHESIZE_TOOL}
-            call = tool_call("call_s", SYNTHESIZE_TOOL, {"tool_name": "math_tool", "capability_description": "Add ints"})
-            return httpx.Response(200, json=completion({"content": None, "tool_calls": [call]}, "tool_calls"))
-        if last["role"] == "tool" and last["tool_call_id"] == "call_s":
+            call = tool_call_item("call_s", SYNTHESIZE_TOOL, {"tool_name": "math_tool", "capability_description": "Add ints"})
+            return httpx.Response(200, json=response_item([call]))
+        if last.get("type") == "function_call_output" and last.get("call_id") == "call_s":
             assert "math_tool__add" in tool_names  # hot-loaded before the next request
-            call = tool_call("call_a", "math_tool__add", {"a": 20, "b": 22})
-            return httpx.Response(200, json=completion({"content": None, "tool_calls": [call]}, "tool_calls"))
-        if last["role"] == "tool" and last["tool_call_id"] == "call_a":
+            call = tool_call_item("call_a", "math_tool__add", {"a": 20, "b": 22})
+            return httpx.Response(200, json=response_item([call]))
+        if last.get("type") == "function_call_output" and last.get("call_id") == "call_a":
             # The assistant tool_calls turn preceding it must be replayed intact.
-            assert body["messages"][-2]["tool_calls"][0]["id"] == "call_a"
-            return httpx.Response(200, json=completion({"content": f"The answer is {last['content']}."}))
-        raise AssertionError(f"unexpected request: {body['messages']}")
+            assert body["input"][-2]["call_id"] == "call_a"
+            return httpx.Response(200, json=response_item([text_item(f"The answer is {last['output']}.")]))
+        raise AssertionError(f"unexpected request: {body['input']}")
 
 
 @pytest.fixture
@@ -97,4 +115,4 @@ async def test_openai_tool_error_is_marked(provider):
     from autotool.core.schema import ToolResult
 
     (msg,) = provider.tool_results_messages([ToolResult(call_id="x", content="boom", is_error=True)])
-    assert msg == {"role": "tool", "tool_call_id": "x", "content": "ERROR: boom"}
+    assert msg == {"type": "function_call_output", "call_id": "x", "output": "ERROR: boom"}

@@ -15,6 +15,13 @@ from typing import Any, Awaitable, Callable, Protocol, TypeVar
 
 from pydantic import BaseModel
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
 from autotool.core.schema import LLMTurn, ToolCall, ToolResult
 
 T = TypeVar("T", bound=BaseModel)
@@ -136,7 +143,7 @@ class AnthropicProvider(_AnthropicFormatMixin):
 
 
 class OpenAIProvider:
-    """OpenAI Chat Completions backend (function calling + structured outputs)."""
+    """OpenAI Responses API backend (function calling + structured outputs)."""
 
     def __init__(self, model: str | None = None, *, client: Any = None, reasoning_effort: str | None = None) -> None:
         import openai
@@ -150,75 +157,125 @@ class OpenAIProvider:
 
     def _record(self, response: Any) -> None:
         u = getattr(response, "usage", None)
-        self.usage.add(getattr(u, "prompt_tokens", 0), getattr(u, "completion_tokens", 0))
+        in_tok = getattr(u, "input_tokens", None) or getattr(u, "prompt_tokens", 0)
+        out_tok = getattr(u, "output_tokens", None) or getattr(u, "completion_tokens", 0)
+        self.usage.add(in_tok, out_tok)
 
     def _extra(self) -> dict[str, Any]:
-        return {"reasoning_effort": self.reasoning_effort} if self.reasoning_effort else {}
+        return {"reasoning": {"effort": self.reasoning_effort}} if self.reasoning_effort else {}
 
     @staticmethod
     def _tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return [
-            {
-                "type": "function",
-                "function": {"name": t["name"], "description": t.get("description", ""), "parameters": t["input_schema"]},
-            }
-            for t in tools
-        ]
+        res_tools = []
+        for t in tools:
+            if "function" in t:
+                f = t["function"]
+                res_tools.append({
+                    "type": "function",
+                    "name": f["name"],
+                    "description": f.get("description", ""),
+                    "parameters": f.get("parameters", {}),
+                })
+            else:
+                res_tools.append({
+                    "type": "function",
+                    "name": t["name"],
+                    "description": t.get("description", ""),
+                    "parameters": t.get("input_schema") or t.get("parameters") or {},
+                })
+        return res_tools
 
     async def complete(self, *, system: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> LLMTurn:
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "system", "content": system}, *messages],
-            tools=self._tools(tools) or None,
+        input_items: list[Any] = []
+        for m in messages:
+            if isinstance(m, list):
+                input_items.extend(m)
+            else:
+                input_items.append(m)
+
+        tools_param = self._tools(tools)
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "instructions": system,
+            "input": input_items,
             **self._extra(),
-        )
+        }
+        if tools_param:
+            kwargs["tools"] = tools_param
+
+        response = await self.client.responses.create(**kwargs)
         self._record(response)
-        choice = response.choices[0]
-        msg = choice.message
-        if getattr(msg, "refusal", None):
-            raise LLMRefusalError(f"Model declined the request: {msg.refusal}")
-        if choice.finish_reason == "length" and msg.tool_calls:
-            raise RuntimeError("Response hit the token limit mid tool call; arguments may be truncated")
+
+        if getattr(response, "error", None):
+            raise RuntimeError(f"Model response error: {response.error}")
+
+        text_chunks: list[str] = []
         calls: list[ToolCall] = []
-        for tc in msg.tool_calls or []:
-            if tc.type != "function":
-                continue
-            try:
-                args = json.loads(tc.function.arguments or "{}")
-            except json.JSONDecodeError:
-                args = {"__invalid_json__": tc.function.arguments}
-            calls.append(ToolCall(id=tc.id, name=tc.function.name, arguments=args if isinstance(args, dict) else {}))
+
+        for item in getattr(response, "output", []):
+            item_type = getattr(item, "type", None) or (item.get("type") if isinstance(item, dict) else None)
+            if item_type == "message":
+                contents = getattr(item, "content", []) or (item.get("content", []) if isinstance(item, dict) else [])
+                for part in contents:
+                    part_type = getattr(part, "type", None) or (part.get("type") if isinstance(part, dict) else None)
+                    if part_type == "output_text":
+                        text_chunks.append(getattr(part, "text", "") or (part.get("text", "") if isinstance(part, dict) else ""))
+            elif item_type == "function_call":
+                call_id = getattr(item, "call_id", None) or (item.get("call_id") if isinstance(item, dict) else None) or getattr(item, "id", "")
+                name = getattr(item, "name", "") or (item.get("name", "") if isinstance(item, dict) else "")
+                args_raw = getattr(item, "arguments", "{}") or (item.get("arguments", "{}") if isinstance(item, dict) else "{}")
+                if isinstance(args_raw, dict):
+                    args = args_raw
+                else:
+                    try:
+                        args = json.loads(args_raw or "{}")
+                    except json.JSONDecodeError:
+                        args = {"__invalid_json__": args_raw}
+                calls.append(ToolCall(id=call_id, name=name, arguments=args if isinstance(args, dict) else {}))
+
+        text = "".join(text_chunks)
+        if not text and hasattr(response, "output_text") and response.output_text:
+            text = response.output_text
+
+        raw_items = []
+        for item in getattr(response, "output", []):
+            if hasattr(item, "model_dump"):
+                raw_items.append(item.model_dump(exclude_none=True))
+            elif isinstance(item, dict):
+                raw_items.append(item)
+
         return LLMTurn(
-            text=msg.content or "",
+            text=text,
             tool_calls=calls,
-            stop_reason=choice.finish_reason,
-            raw_content=msg.model_dump(exclude_none=True, exclude_unset=True),
+            stop_reason=getattr(response, "status", None),
+            raw_content=raw_items,
         )
 
     async def structured(self, *, system: str, prompt: str, output_model: type[T]) -> T:
-        response = await self.client.chat.completions.parse(
+        response = await self.client.responses.parse(
             model=self.model,
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
-            response_format=output_model,
+            instructions=system,
+            input=prompt,
+            text_format=output_model,
             **self._extra(),
         )
         self._record(response)
-        msg = response.choices[0].message
-        if msg.refusal:
-            raise LLMRefusalError(f"Model declined the request: {msg.refusal}")
-        if msg.parsed is None:
-            raise RuntimeError(f"No structured output returned (finish_reason={response.choices[0].finish_reason})")
-        return msg.parsed
+        if getattr(response, "error", None):
+            raise RuntimeError(f"Model response error: {response.error}")
+        if getattr(response, "output_parsed", None) is None:
+            raise RuntimeError(f"No structured output returned (status={getattr(response, 'status', None)})")
+        return response.output_parsed
 
-    def assistant_message(self, turn: LLMTurn) -> dict[str, Any]:
-        message = dict(turn.raw_content or {"role": "assistant", "content": turn.text})
-        message["role"] = "assistant"
-        return message
+    def assistant_message(self, turn: LLMTurn) -> Any:
+        return turn.raw_content if turn.raw_content else [{"role": "assistant", "content": turn.text}]
 
     def tool_results_messages(self, results: list[ToolResult]) -> list[dict[str, Any]]:
-        # Chat Completions has no is_error flag; mark failures in the content.
         return [
-            {"role": "tool", "tool_call_id": r.call_id, "content": f"ERROR: {r.content}" if r.is_error else r.content}
+            {
+                "type": "function_call_output",
+                "call_id": r.call_id,
+                "output": f"ERROR: {r.content}" if r.is_error else r.content,
+            }
             for r in results
         ]
 
