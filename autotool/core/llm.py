@@ -15,13 +15,6 @@ from typing import Any, Awaitable, Callable, Protocol, TypeVar
 
 from pydantic import BaseModel
 
-try:
-    from dotenv import load_dotenv
-
-    load_dotenv()
-except ImportError:
-    pass
-
 from autotool.core.schema import LLMTurn, ToolCall, ToolResult
 
 T = TypeVar("T", bound=BaseModel)

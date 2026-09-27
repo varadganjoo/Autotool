@@ -11,7 +11,7 @@ import tempfile
 from contextlib import AsyncExitStack
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, Iterable, TextIO
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -21,12 +21,27 @@ from autotool.core.schema import MCPToolDescriptor
 
 # Environment variables that must never leak into synthesized code.
 _SECRET_ENV_RE = re.compile(r"(API_KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)", re.IGNORECASE)
+# What a tool may inherit: OS basics, locale, proxy and CA settings, and `<SERVICE>_API_BASE`
+# overrides. Hosts such as Claude Code hand MCP servers their whole environment (AWS keys,
+# DATABASE_URL, ...), so this is an allowlist, not a denylist.
+_INHERIT = {
+    "PATH", "PATHEXT", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "TEMP", "TMP", "TMPDIR", "HOME",
+    "USERPROFILE", "APPDATA", "LOCALAPPDATA", "LANG", "LANGUAGE", "TZ", "HTTP_PROXY", "HTTPS_PROXY",
+    "ALL_PROXY", "NO_PROXY", "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE",
+}
 
 
-def sandbox_env(extra: dict[str, str] | None = None) -> dict[str, str]:
-    """Parent environment minus secrets. Keeps PATH, proxy and CA settings so
+def _inheritable(name: str) -> bool:
+    upper = name.upper()
+    return (upper in _INHERIT or upper.startswith("LC_") or upper.endswith("_API_BASE")) and not _SECRET_ENV_RE.search(name)
+
+
+def sandbox_env(extra: dict[str, str] | None = None, drop: Iterable[str] = ()) -> dict[str, str]:
+    """Allowlisted parent environment minus ``drop`` (every credential-source name, so a tool
+    only sees the ones granted to it through ``extra``). Keeps PATH, proxy and CA settings so
     generated tools can still reach the network the host is allowed to reach."""
-    env = {k: v for k, v in os.environ.items() if not _SECRET_ENV_RE.search(k)}
+    dropped = {name.upper() for name in drop}
+    env = {k: v for k, v in os.environ.items() if _inheritable(k) and k.upper() not in dropped}
     env["PYTHONUNBUFFERED"] = "1"
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     if extra:
@@ -58,11 +73,14 @@ class DynamicMCPClient:
         env: dict[str, str] | None = None,
         call_timeout_s: float = 30.0,
         errlog: TextIO | None = None,
+        connect_timeout_s: float | None = None,
     ) -> None:
         self.script_path = Path(script_path).resolve()
         self.server_name = server_name or self.script_path.stem
         self.env = env
         self.call_timeout = timedelta(seconds=call_timeout_s)
+        # Bounds initialize/list_tools; tool calls pass their own timeout.
+        self.connect_timeout = timedelta(seconds=connect_timeout_s) if connect_timeout_s else None
         self._stack: AsyncExitStack | None = None
         self._session: ClientSession | None = None
         # Caller-owned errlog outlives the connection (the verifier reads it after
@@ -82,12 +100,12 @@ class DynamicMCPClient:
         scopes are task-bound)."""
         if self._session is not None:
             return self.tools
-        params = StdioServerParameters(
-            command=sys.executable,
-            args=[str(self.script_path)],
-            env=self.env if self.env is not None else sandbox_env(),
-            cwd=str(self.script_path.parent),
-        )
+        env = self.env if self.env is not None else sandbox_env()
+        args = [str(self.script_path)]
+        if "AUTOTOOL_GUARD" in env:  # run under the in-process guard (autotool/guard.py)
+            args = ["-m", "autotool.guard", *args]
+            env = {**env, "PYTHONPATH": str(Path(__file__).resolve().parents[2])}  # so -m finds autotool
+        params = StdioServerParameters(command=sys.executable, args=args, env=env, cwd=str(self.script_path.parent))
         stack = AsyncExitStack()
         try:
             # stderr goes to a real file so it can be surfaced on failure.
@@ -96,7 +114,7 @@ class DynamicMCPClient:
                     tempfile.TemporaryFile(mode="w+", encoding="utf-8", prefix=f"{self.server_name}-", suffix=".log")
                 )
             read, write = await stack.enter_async_context(stdio_client(params, errlog=self._errlog))
-            session = await stack.enter_async_context(ClientSession(read, write))
+            session = await stack.enter_async_context(ClientSession(read, write, read_timeout_seconds=self.connect_timeout))
             await session.initialize()
             self._stack, self._session = stack, session
             await self.refresh_tools()

@@ -117,7 +117,7 @@ class GeneratedToolCandidate(BaseModel):
 
 class VerificationReport(BaseModel):
     ok: bool
-    stage: Literal["static", "startup", "list_tools", "smoke_test", "passed"]
+    stage: Literal["static", "consent", "startup", "list_tools", "smoke_test", "passed"]
     tools: list[MCPToolDescriptor] = Field(default_factory=list)
     smoke_tool: str | None = None
     smoke_arguments: dict[str, Any] | None = None

@@ -1,12 +1,2 @@
-# Core runtime
-mcp>=1.9,<2              # Official MCP Python SDK; 1.x ships mcp.server.fastmcp.FastMCP
-openai>=1.60,<3          # OpenAI backend (default when OPENAI_API_KEY is set)
-anthropic>=1.0,<2        # Claude backend (--provider anthropic)
-pydantic>=2.7,<3         # Strict schemas for state, tool specs and reflection
-httpx>=0.27,<1           # HTTP client used by synthesized tools
-anyio>=4.4,<5            # Transport layer used by the MCP SDK
-python-dotenv>=1.0,<2    # Load .env configuration
-
-# Dev / test
-pytest>=8,<10
-pytest-asyncio>=0.23,<2
+# Dependencies live in pyproject.toml; this installs the package with the dev and model extras.
+-e .[dev]

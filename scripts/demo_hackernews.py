@@ -28,6 +28,10 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from dotenv import load_dotenv  # noqa: E402
+
+load_dotenv(ROOT / ".env")  # model keys for the benchmark's own agents
+
 from autotool.core.llm import ScriptedProvider, default_provider  # noqa: E402
 from autotool.core.orchestrator import SYNTHESIZE_TOOL  # noqa: E402
 from autotool.core.schema import GeneratedToolCandidate, LLMTurn, ToolCall  # noqa: E402

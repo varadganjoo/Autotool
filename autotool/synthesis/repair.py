@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import tempfile
 from pathlib import Path
 
 from autotool.core.llm import LLMProvider
@@ -31,8 +32,8 @@ class SynthesisEngine:
         verifier: ToolVerifier | None = None,
         max_retries: int = 3,
     ) -> None:
-        self.generator = ToolGenerator(provider)
         self.verifier = verifier or ToolVerifier()
+        self.generator = ToolGenerator(provider, env_names=self.verifier.tool_env.names)
         self.tools_dir = Path(tools_dir).resolve()
         self.max_retries = max_retries
 
@@ -58,6 +59,8 @@ class SynthesisEngine:
                 log.info("Verified %s in %d attempt(s) -> %s", request.tool_name, attempts, path)
                 return SynthesisResult(tool_name=request.tool_name, path=str(path), attempts=attempts, report=report)
 
+            if report.stage == "consent":  # the user said no (or cannot be asked): never retry or re-prompt
+                raise SynthesisError(request.tool_name, attempts, report)
             reason = (report.error or "").strip().splitlines()
             log.warning("Attempt %d for %s failed at %s: %s", attempts, request.tool_name, report.stage, reason[-1] if reason else "")
             if attempts > self.max_retries:
@@ -65,12 +68,15 @@ class SynthesisEngine:
             candidate = await self.generator.repair(request, candidate, report, attempt=attempts)
 
     def _promote(self, tool_name: str, code: str) -> Path:
-        """Atomically move verified code into the tools cache."""
-        self.tools_dir.mkdir(parents=True, exist_ok=True)
-        final = self.cached_path(tool_name)
-        tmp = final.with_suffix(".py.tmp")
-        tmp.write_text(code, encoding="utf-8")
-        os.replace(tmp, final)
-        staged = self.verifier.staging_dir / f"{tool_name}.py"
-        staged.unlink(missing_ok=True)
-        return final
+        return promote(self.tools_dir, tool_name, code)
+
+
+def promote(tools_dir: Path, tool_name: str, code: str) -> Path:
+    """Atomically move verified code into the tools cache (unique temp file: two hosts may promote at once)."""
+    tools_dir.mkdir(parents=True, exist_ok=True)
+    final = tools_dir / f"{tool_name}.py"
+    fd, tmp = tempfile.mkstemp(dir=tools_dir, prefix=f".{tool_name}-", suffix=".tmp")
+    with open(fd, "w", encoding="utf-8") as f:
+        f.write(code)
+    os.replace(tmp, final)
+    return final

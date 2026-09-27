@@ -1,27 +1,50 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "autotool"
+name = "autotool-mcp"
 version = "0.1.0"
-description = "Self-synthesizing MCP agent runtime: writes, verifies and hot-loads its own FastMCP tools."
+description = "A self-extending tool layer for any AI agent: your agent writes the tools it needs; AutoTool verifies, guards and mounts them, and gives them API keys by name only."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Varad Ganjoo", email = "varadganjoo@gmail.com" }]
 requires-python = ">=3.11"
+keywords = ["mcp", "model context protocol", "agents", "llm", "tools", "claude code", "codex", "cursor"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries",
+]
 dependencies = [
-    "mcp>=1.9,<2",
-    "openai>=1.60,<3",
-    "anthropic>=1.0,<2",
+    "mcp>=1.30,<2",
     "pydantic>=2.7,<3",
     "httpx>=0.27,<1",
     "anyio>=4.4,<5",
     "python-dotenv>=1.0,<2",
+    "keyring>=25,<26",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8,<10", "pytest-asyncio>=0.23,<2"]
+# Only for synthesize_tool (AutoTool writes tools with its own model key) and the `autotool run` demo agent.
+models = ["openai>=1.60,<3", "anthropic>=1.0,<2"]
+dev = ["autotool-mcp[models]", "pytest>=8,<10", "pytest-asyncio>=0.23,<2"]
+
+[project.urls]
+Homepage = "https://github.com/varadganjoo/Autotool"
+Repository = "https://github.com/varadganjoo/Autotool"
+Issues = "https://github.com/varadganjoo/Autotool/issues"
 
 [project.scripts]
-autotool = "autotool.main:cli"
+autotool = "autotool.cli:main"
+autotool-mcp = "autotool.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["autotool*"]

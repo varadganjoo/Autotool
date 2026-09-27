@@ -54,6 +54,18 @@ SYSTEM_PROMPT = """You are AutoTool, an autonomous agent that can extend its own
 - Give the final answer concisely, in the format the user asked for."""
 
 
+def system_prompt(env_names: list[str]) -> str:
+    """SYSTEM_PROMPT plus the names (never values) of credentials synthesized tools may use."""
+    if not env_names:
+        return SYSTEM_PROMPT
+    return SYSTEM_PROMPT + (
+        "\n- Credentials and settings are available to tools you synthesize (values are injected at runtime "
+        f"and never shown to you): {', '.join(env_names)}. When a task needs a service one of these unlocks, "
+        "synthesize a tool for it and name the variable(s) in capability_description. If a task needs "
+        "credentials that are not listed, say which are missing instead of guessing."
+    )
+
+
 class RunEvent(BaseModel):
     kind: str  # "llm" | "tool_call" | "tool_result" | "synthesis" | "final"
     detail: dict[str, Any] = Field(default_factory=dict)
@@ -100,11 +112,12 @@ class Orchestrator:
         events: list[RunEvent] = []
         synthesized: list[str] = []
         started = time.monotonic()
+        system = system_prompt(self.registry.tool_env.names)
 
         for step in range(1, self.max_steps + 1):
             # Tool list is rebuilt every step so freshly mounted tools are visible immediately.
             tools = self.active_tools()
-            turn = await self.provider.complete(system=SYSTEM_PROMPT, messages=self.messages, tools=tools)
+            turn = await self.provider.complete(system=system, messages=self.messages, tools=tools)
             self.messages.append(self.provider.assistant_message(turn))
             self._emit(events, "llm", step=step, text=turn.text, tool_calls=[c.name for c in turn.tool_calls])
 

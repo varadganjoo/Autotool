@@ -7,9 +7,12 @@ import asyncio
 import logging
 import sys
 
+from dotenv import find_dotenv, load_dotenv
+
 from autotool.core.llm import LLMProvider, default_provider
 from autotool.core.orchestrator import Orchestrator, RunEvent, RunResult
 from autotool.core.registry import ToolRegistry
+from autotool.core.toolenv import ToolEnv
 from autotool.synthesis.repair import SynthesisEngine
 from autotool.synthesis.verifier import ToolVerifier
 
@@ -38,13 +41,16 @@ async def run_objective(
     timeout_s: float = 15.0,
     max_retries: int = 3,
     env_overrides: dict[str, str] | None = None,
+    tool_env: ToolEnv | None = None,
     verbose: bool = True,
 ) -> RunResult:
-    verifier = ToolVerifier(staging_dir, timeout_s=timeout_s, env_overrides=env_overrides)
+    tool_env = tool_env if tool_env is not None else ToolEnv.from_dotenv()
+    verifier = ToolVerifier(staging_dir, timeout_s=timeout_s, env_overrides=env_overrides, tool_env=tool_env)
     engine = SynthesisEngine(provider, tools_dir=tools_dir, verifier=verifier, max_retries=max_retries)
-    async with ToolRegistry(tools_dir, env_overrides=env_overrides) as registry:
+    async with ToolRegistry(tools_dir, env_overrides=env_overrides, tool_env=tool_env) as registry:
         cached = await registry.load_cached()
         if verbose:
+            print(f"Tool credentials from .env: {tool_env.names or 'none'}", file=sys.stderr)
             print(f"Mounted {len(cached)} cached tool server(s): {cached or 'none'}", file=sys.stderr)
         orchestrator = Orchestrator(provider, registry, engine, on_event=print_event if verbose else None)
         return await orchestrator.run(prompt)
@@ -66,14 +72,22 @@ def cli(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout", type=float, default=15.0, help="Verification timeout in seconds")
     parser.add_argument("--max-retries", type=int, default=3)
     parser.add_argument("--no-fallbacks", action="store_true", help="Anthropic only: disable server-side refusal fallbacks")
+    parser.add_argument(
+        "--env-file", default=None, help="dotenv file whose variables synthesized tools may use (default: nearest .env)"
+    )
     parser.add_argument("-q", "--quiet", action="store_true")
     parser.add_argument("--log-level", default="WARNING")
     args = parser.parse_args(argv)
+    load_dotenv(find_dotenv(usecwd=True))  # the demo agent's own model key (nearest .env)
 
     logging.basicConfig(level=args.log_level.upper(), format="%(levelname)s %(name)s: %(message)s")
-    provider = default_provider(
-        args.provider, args.model, reasoning_effort=args.reasoning_effort, use_fallbacks=not args.no_fallbacks
-    )
+    try:
+        provider = default_provider(
+            args.provider, args.model, reasoning_effort=args.reasoning_effort, use_fallbacks=not args.no_fallbacks
+        )
+    except ImportError as exc:
+        print(f"The demo agent needs a model SDK ({exc}). Install it with: pip install 'autotool-mcp[models]'", file=sys.stderr)
+        return 2
     result = asyncio.run(
         run_objective(
             args.prompt,
@@ -82,6 +96,7 @@ def cli(argv: list[str] | None = None) -> int:
             staging_dir=args.staging_dir,
             timeout_s=args.timeout,
             max_retries=args.max_retries,
+            tool_env=ToolEnv.from_dotenv(args.env_file),
             verbose=not args.quiet,
         )
     )

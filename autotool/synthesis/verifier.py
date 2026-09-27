@@ -13,18 +13,20 @@ import tempfile
 import time
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable, Iterable
 
-from autotool.clients.dynamic_client import DynamicMCPClient, render_call_result, sandbox_env
+from autotool.clients.dynamic_client import DynamicMCPClient, render_call_result
 from autotool.core.schema import MCPToolDescriptor, VerificationReport
+from autotool.core.toolenv import ToolEnv, required_env
 
 _BANNED_MODULES = {"subprocess", "ctypes", "multiprocessing", "pty"}
 _BANNED_CALLS = {"eval", "exec", "compile", "__import__"}
 _BANNED_ATTRS = {("os", "system"), ("os", "popen"), ("os", "remove"), ("os", "unlink"), ("shutil", "rmtree")}
 
 
-def static_check(code: str) -> str | None:
-    """Return an error message if the code violates the tool contract."""
+def static_check(code: str, available: Iterable[str] | None = None) -> str | None:
+    """Return an error message if the code violates the tool contract. ``available`` is the
+    set of .env names a tool may declare in ``REQUIRED_ENV`` (None skips that check)."""
     try:
         tree = ast.parse(code)
     except SyntaxError as exc:
@@ -53,6 +55,18 @@ def static_check(code: str) -> str | None:
         problems.append("missing 'from mcp.server.fastmcp import FastMCP'")
     if not _has_main_guard_run(tree):
         problems.append("missing `if __name__ == \"__main__\": mcp.run()` entrypoint")
+    try:
+        declared = required_env(code)
+    except ValueError as exc:
+        problems.append(str(exc))
+    else:
+        if available is not None:
+            allowed = set(available)
+            unknown = [n for n in declared if n not in allowed]
+            if unknown:
+                problems.append(
+                    f"REQUIRED_ENV lists {unknown}, which are not available; available variables: {sorted(allowed) or 'none'}"
+                )
     return "; ".join(problems) or None
 
 
@@ -110,16 +124,22 @@ class ToolVerifier:
         *,
         timeout_s: float = 15.0,
         env_overrides: dict[str, str] | None = None,
+        tool_env: ToolEnv | None = None,
+        consent: Callable[[str, list[str], str], Awaitable[bool]] | None = None,
     ) -> None:
         self.staging_dir = Path(staging_dir).resolve()
         self.timeout_s = timeout_s
         self.env_overrides = env_overrides or {}
+        self.tool_env = tool_env or ToolEnv()
+        self.consent = consent  # asks the user; None means unapproved tools are refused
 
     def stage(self, tool_name: str, code: str) -> Path:
+        # Unique per verification: concurrent create_tool calls (or two hosts) may stage one name at once.
         self.staging_dir.mkdir(parents=True, exist_ok=True)
-        path = self.staging_dir / f"{tool_name}.py"
-        path.write_text(code, encoding="utf-8")
-        return path
+        fd, name = tempfile.mkstemp(dir=self.staging_dir, prefix=f"{tool_name}-", suffix=".py")
+        with open(fd, "w", encoding="utf-8") as f:
+            f.write(code)
+        return Path(name)
 
     async def verify(
         self,
@@ -130,14 +150,32 @@ class ToolVerifier:
         smoke_arguments: dict[str, Any] | None = None,
     ) -> VerificationReport:
         started = time.monotonic()
-        problem = static_check(code)
+        problem = static_check(code, self.tool_env.names)
         if problem:
             return VerificationReport(ok=False, stage="static", error=problem, duration_s=time.monotonic() - started)
+        # Consent comes before any code runs with the keys, the smoke test included.
+        declared = required_env(code)
+        if not self.tool_env.is_approved(tool_name, declared, code) and not (
+            self.consent and await self.consent(tool_name, declared, code)
+        ):
+            keys = " ".join(declared)
+            # `autotool tools approve` approves exactly this code (hosts that cannot show prompts).
+            pending = self.staging_dir / "pending" / f"{tool_name}.py"
+            pending.parent.mkdir(parents=True, exist_ok=True)
+            pending.write_text(code, encoding="utf-8")
+            return VerificationReport(
+                ok=False, stage="consent", duration_s=time.monotonic() - started,
+                error=f"The user has not approved tool '{tool_name}' to use {', '.join(declared)} (they declined, or this "
+                f"host cannot show approval prompts). Ask the user to run `autotool tools approve {tool_name} {keys}`, "
+                "then call create_tool again.",
+            )
 
         path = self.stage(tool_name, code)
         state: dict[str, Any] = {"stage": "startup"}
         with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as errlog:
-            client = DynamicMCPClient(path, server_name=tool_name, env=sandbox_env(self.env_overrides), errlog=errlog)
+            client = DynamicMCPClient(
+                path, server_name=tool_name, env=self.tool_env.env_for(code, self.env_overrides, tool=tool_name), errlog=errlog
+            )
             try:
                 # asyncio.timeout (not wait_for) keeps connect/close in one task,
                 # which anyio's task-bound cancel scopes in the MCP transport require.
@@ -150,7 +188,11 @@ class ToolVerifier:
             finally:
                 await client.close()
             report.stderr = client.read_stderr()
+        path.unlink(missing_ok=True)
         report.duration_s = time.monotonic() - started
+        # Everything in the report can reach the LLM (repair prompt, events): scrub secret values.
+        redact = self.tool_env.redact
+        report.error, report.stderr, report.smoke_output = redact(report.error), redact(report.stderr), redact(report.smoke_output)
         return report
 
     @staticmethod
@@ -197,5 +239,5 @@ class ToolVerifier:
             raise AssertionError(f"Tool '{target.name}' returned no text content for arguments {args}")
 
         return VerificationReport(
-            ok=True, stage="passed", tools=tools, smoke_tool=target.name, smoke_arguments=args, smoke_output=output[:2000]
+            ok=True, stage="passed", tools=tools, smoke_tool=target.name, smoke_arguments=args, smoke_output=self.tool_env.redact(output)[:2000]  # redact first: a cut key would leak its prefix
         )

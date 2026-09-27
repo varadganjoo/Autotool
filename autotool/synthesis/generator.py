@@ -7,10 +7,7 @@ import re
 from autotool.core.llm import LLMProvider
 from autotool.core.schema import CapabilityRequest, GeneratedToolCandidate, VerificationReport
 
-GENERATOR_SYSTEM = """You write production-quality Model Context Protocol (MCP) tool servers in Python.
-
-Every script you write MUST follow this contract:
-- It is one self-contained file that runs as `python <file>.py` and serves MCP over stdio.
+TOOL_CONTRACT = """- It is one self-contained file that runs as `python <file>.py` and serves MCP over stdio.
 - It uses `from mcp.server.fastmcp import FastMCP` and creates `mcp = FastMCP("<tool_name>")`.
 - Every tool is a function decorated with `@mcp.tool()` with full type annotations and a docstring
   that explains what it does and each parameter. Prefer simple parameter types (str, int, float, bool)
@@ -19,15 +16,24 @@ Every script you write MUST follow this contract:
       if __name__ == "__main__":
           mcp.run()
 - Only import the standard library, `httpx`, `pydantic` and `mcp`.
-- Use `httpx` with an explicit timeout of at most 10 seconds for network calls. Only use public,
-  keyless APIs; never require or read API keys, tokens or other secrets.
+- Use `httpx` with an explicit timeout of at most 10 seconds for network calls. Use public APIs, or
+  APIs whose credentials the prompt lists as available environment variables. Never hard-code
+  credentials.
+- Credentials: read each one with `os.environ["NAME"]` and declare every name you read at module
+  level, e.g. `REQUIRED_ENV = ["NAME"]`. Only declared names are injected into the process. Send keys
+  in headers when the API allows it; never return, log or put key values in error messages.
 - Make every external API base URL overridable through an environment variable named
   `<SERVICE>_API_BASE` (e.g. `HN_API_BASE`), defaulting to the real public URL.
 - Let errors raise (e.g. `response.raise_for_status()`); FastMCP turns exceptions into tool errors,
   which is how the verification harness detects broken tools. Do not swallow exceptions.
 - NEVER write to stdout (no bare `print`): stdout carries the MCP protocol. Log to stderr if needed.
 - No subprocesses, no filesystem writes, no `eval`/`exec`.
-- Keep the tool fast: bound fan-out (e.g. concurrent requests for at most ~30 items).
+- Keep the tool fast: bound fan-out (e.g. concurrent requests for at most ~30 items)."""
+
+GENERATOR_SYSTEM = f"""You write production-quality Model Context Protocol (MCP) tool servers in Python.
+
+Every script you write MUST follow this contract:
+{TOOL_CONTRACT}
 
 Also choose the primary tool and safe, realistic smoke-test arguments that exercise it cheaply
 (e.g. a small limit)."""
@@ -68,14 +74,30 @@ def clean_code(code: str) -> str:
     return (m.group(1) if m else code).strip() + "\n"
 
 
+def env_section(env_names: list[str]) -> str:
+    """The credential part of the tool contract: names only, never values."""
+    if not env_names:
+        return "No credentials are available: only use public, keyless APIs and do not declare REQUIRED_ENV."
+    return (
+        "Environment variables available to this tool (values are injected at runtime; you never see them): "
+        f"{', '.join(env_names)}.\nIf the API needs one of them, read it with os.environ[\"NAME\"] and "
+        "declare it, e.g. REQUIRED_ENV = [\"NAME\"]. Declare only the ones this tool actually uses."
+    )
+
+
 class ToolGenerator:
-    def __init__(self, provider: LLMProvider) -> None:
+    def __init__(self, provider: LLMProvider, env_names: list[str] | None = None) -> None:
         self.provider = provider
+        self.env_names = env_names or []
+
+    def _env_section(self) -> str:
+        return env_section(self.env_names)
 
     async def generate(self, request: CapabilityRequest) -> GeneratedToolCandidate:
         prompt = (
             f"Write the MCP server `{request.tool_name}` (use exactly `FastMCP(\"{request.tool_name}\")`).\n\n"
             f"Capability it must provide:\n{request.capability_description}\n\n"
+            f"{self._env_section()}\n\n"
             f"Structural reference (adapt, do not copy the example API):\n```python\n{TEMPLATE}```"
         )
         return self._finalize(await self.provider.structured(system=GENERATOR_SYSTEM, prompt=prompt, output_model=GeneratedToolCandidate))
@@ -90,6 +112,7 @@ class ToolGenerator:
         prompt = (
             f"Your MCP server `{request.tool_name}` failed automated verification (repair attempt {attempt}).\n\n"
             f"Capability it must provide:\n{request.capability_description}\n\n"
+            f"{self._env_section()}\n\n"
             f"Previous code:\n```python\n{previous.code}```\n\n"
             f"Smoke test: primary_tool={report.smoke_tool or previous.primary_tool!r}, "
             f"arguments={report.smoke_arguments if report.smoke_arguments is not None else previous.smoke_test_arguments_json}\n\n"

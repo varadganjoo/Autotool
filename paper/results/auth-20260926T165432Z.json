@@ -1,0 +1,1755 @@
+[
+  {
+    "task": "nimbus_header",
+    "suite": "mock",
+    "condition": "env",
+    "trial": 1,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "NIMBUS_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "expected 19",
+    "answer": "Nimbus reports the current temperature in Reykjavik as **19\u00b0C**.",
+    "steps": 3,
+    "synthesized": [
+      "nimbus_weather_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "nimbus_weather_tool": [
+        "NIMBUS_API_KEY"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 10.56,
+    "llm_calls": 4,
+    "input_tokens": 3071,
+    "output_tokens": 630
+  },
+  {
+    "task": "nimbus_header",
+    "suite": "mock",
+    "condition": "env",
+    "trial": 2,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "NIMBUS_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "expected 19",
+    "answer": "Nimbus reports the current temperature in Reykjavik is **19\u00b0C**.",
+    "steps": 3,
+    "synthesized": [
+      "nimbus_weather_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "nimbus_weather_tool": [
+        "NIMBUS_API_KEY"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 9.08,
+    "llm_calls": 4,
+    "input_tokens": 3093,
+    "output_tokens": 539
+  },
+  {
+    "task": "nimbus_header",
+    "suite": "mock",
+    "condition": "env",
+    "trial": 3,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "NIMBUS_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "expected 19",
+    "answer": "Nimbus reports the current temperature in Reykjavik is **19\u00b0C**.",
+    "steps": 3,
+    "synthesized": [
+      "nimbus_weather_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "nimbus_weather_tool": [
+        "NIMBUS_API_KEY"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 10.44,
+    "llm_calls": 4,
+    "input_tokens": 3088,
+    "output_tokens": 872
+  },
+  {
+    "task": "nimbus_header",
+    "suite": "mock",
+    "condition": "ablation",
+    "trial": 1,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "NIMBUS_API_KEY"
+    ],
+    "passed": false,
+    "grade_note": "expected 19",
+    "answer": "I can\u2019t retrieve Reykjavik\u2019s temperature without the account\u2019s Nimbus API key. The request without a key returned **401: missing or invalid X-Nimbus-Key**.",
+    "steps": 3,
+    "synthesized": [
+      "nimbus_weather_tool"
+    ],
+    "attempts": 2,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "nimbus_weather_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 17.69,
+    "llm_calls": 5,
+    "input_tokens": 4737,
+    "output_tokens": 1649
+  },
+  {
+    "task": "nimbus_header",
+    "suite": "mock",
+    "condition": "ablation",
+    "trial": 2,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "NIMBUS_API_KEY"
+    ],
+    "passed": false,
+    "grade_note": "expected 19",
+    "answer": "I couldn\u2019t retrieve Reykjavik\u2019s temperature: Nimbus returned **401** with \u201cmissing or invalid X-Nimbus-Key.\u201d I don\u2019t have a valid API key available.",
+    "steps": 3,
+    "synthesized": [
+      "nimbus_weather_tool"
+    ],
+    "attempts": 3,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "nimbus_weather_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 43.28,
+    "llm_calls": 6,
+    "input_tokens": 6163,
+    "output_tokens": 5667
+  },
+  {
+    "task": "nimbus_header",
+    "suite": "mock",
+    "condition": "ablation",
+    "trial": 3,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "NIMBUS_API_KEY"
+    ],
+    "passed": false,
+    "grade_note": "expected 19",
+    "answer": "I couldn\u2019t retrieve the temperature: Nimbus returned **401 Unauthorized** because no valid `X-Nimbus-Key` was available. Please provide the account\u2019s API key and I can check Reykjavik.",
+    "steps": 2,
+    "synthesized": [],
+    "attempts": 4,
+    "synth_ok": false,
+    "tool_errors": 1,
+    "error": null,
+    "declared_env": {},
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 57.25,
+    "llm_calls": 6,
+    "input_tokens": 7219,
+    "output_tokens": 8020
+  },
+  {
+    "task": "ledgerly_bearer",
+    "suite": "mock",
+    "condition": "env",
+    "trial": 1,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "LEDGERLY_TOKEN"
+    ],
+    "passed": true,
+    "grade_note": "expected 70001.16",
+    "answer": "Account ACC-4471 has a balance of **\u20ac70,001.16**.",
+    "steps": 3,
+    "synthesized": [
+      "ledgerly_balance_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "ledgerly_balance_tool": [
+        "LEDGERLY_TOKEN"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 10.09,
+    "llm_calls": 4,
+    "input_tokens": 3233,
+    "output_tokens": 794
+  },
+  {
+    "task": "ledgerly_bearer",
+    "suite": "mock",
+    "condition": "env",
+    "trial": 2,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "LEDGERLY_TOKEN"
+    ],
+    "passed": true,
+    "grade_note": "expected 70001.16",
+    "answer": "Account ACC-4471 has a balance of **\u20ac70,001.16**.",
+    "steps": 3,
+    "synthesized": [
+      "ledgerly_account_balance_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "ledgerly_account_balance_tool": [
+        "LEDGERLY_TOKEN"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 10.22,
+    "llm_calls": 4,
+    "input_tokens": 3273,
+    "output_tokens": 864
+  },
+  {
+    "task": "ledgerly_bearer",
+    "suite": "mock",
+    "condition": "env",
+    "trial": 3,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "LEDGERLY_TOKEN"
+    ],
+    "passed": true,
+    "grade_note": "expected 70001.16",
+    "answer": "Account ACC-4471 has a balance of **\u20ac70,001.16**.",
+    "steps": 3,
+    "synthesized": [
+      "ledgerly_balance_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "ledgerly_balance_tool": [
+        "LEDGERLY_TOKEN"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 17.8,
+    "llm_calls": 4,
+    "input_tokens": 3128,
+    "output_tokens": 1856
+  },
+  {
+    "task": "ledgerly_bearer",
+    "suite": "mock",
+    "condition": "ablation",
+    "trial": 1,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "LEDGERLY_TOKEN"
+    ],
+    "passed": false,
+    "grade_note": "expected 70001.16",
+    "answer": "I couldn\u2019t retrieve the balance: Ledgerly returned **401 Unauthorized** (\u201cinvalid bearer token\u201d). Please provide a valid API token and I can look it up and convert the cents to euros.",
+    "steps": 3,
+    "synthesized": [
+      "ledgerly_api_tool"
+    ],
+    "attempts": 2,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "ledgerly_api_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 24.78,
+    "llm_calls": 5,
+    "input_tokens": 4182,
+    "output_tokens": 2908
+  },
+  {
+    "task": "ledgerly_bearer",
+    "suite": "mock",
+    "condition": "ablation",
+    "trial": 2,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "LEDGERLY_TOKEN"
+    ],
+    "passed": false,
+    "grade_note": "expected 70001.16",
+    "answer": "I couldn\u2019t retrieve the balance: the Ledgerly API returned **401 Unauthorized**, so I don\u2019t have an authenticated balance to convert to euros.",
+    "steps": 2,
+    "synthesized": [],
+    "attempts": 4,
+    "synth_ok": false,
+    "tool_errors": 1,
+    "error": null,
+    "declared_env": {},
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 40.22,
+    "llm_calls": 6,
+    "input_tokens": 5704,
+    "output_tokens": 5024
+  },
+  {
+    "task": "ledgerly_bearer",
+    "suite": "mock",
+    "condition": "ablation",
+    "trial": 3,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "LEDGERLY_TOKEN"
+    ],
+    "passed": false,
+    "grade_note": "expected 70001.16",
+    "answer": "I can\u2019t retrieve the balance because no Bearer token was provided. Please supply a valid token, and I can convert the returned cents to euros.",
+    "steps": 3,
+    "synthesized": [
+      "ledgerly_account_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "ledgerly_account_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 18.69,
+    "llm_calls": 4,
+    "input_tokens": 3136,
+    "output_tokens": 1984
+  },
+  {
+    "task": "quotient_query",
+    "suite": "mock",
+    "condition": "env",
+    "trial": 1,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "QUOTIENT_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "expected 4481",
+    "answer": "The latest price of ZNTH is **4481**.",
+    "steps": 3,
+    "synthesized": [
+      "quotient_quote_tool"
+    ],
+    "attempts": 4,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "quotient_quote_tool": [
+        "QUOTIENT_API_KEY"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 3,
+    "wall_s": 64.34,
+    "llm_calls": 7,
+    "input_tokens": 8371,
+    "output_tokens": 8654
+  },
+  {
+    "task": "quotient_query",
+    "suite": "mock",
+    "condition": "env",
+    "trial": 2,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "QUOTIENT_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "expected 4481",
+    "answer": "The latest price of ZNTH is **$4,481 USD**.",
+    "steps": 3,
+    "synthesized": [
+      "quotient_quote_tool"
+    ],
+    "attempts": 4,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "quotient_quote_tool": [
+        "QUOTIENT_API_KEY"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 3,
+    "wall_s": 70.44,
+    "llm_calls": 7,
+    "input_tokens": 8868,
+    "output_tokens": 9010
+  },
+  {
+    "task": "quotient_query",
+    "suite": "mock",
+    "condition": "env",
+    "trial": 3,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "QUOTIENT_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "expected 4481",
+    "answer": "The latest price of ZNTH is **$4,481**.",
+    "steps": 3,
+    "synthesized": [
+      "quotient_quote_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "quotient_quote_tool": [
+        "QUOTIENT_API_KEY"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 11.36,
+    "llm_calls": 4,
+    "input_tokens": 3106,
+    "output_tokens": 699
+  },
+  {
+    "task": "quotient_query",
+    "suite": "mock",
+    "condition": "ablation",
+    "trial": 1,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "QUOTIENT_API_KEY"
+    ],
+    "passed": false,
+    "grade_note": "expected 4481",
+    "answer": "I couldn\u2019t retrieve ZNTH\u2019s latest price: the Quotient API returned **401 \u2014 invalid API key**.",
+    "steps": 3,
+    "synthesized": [
+      "quotient_market_data_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "quotient_market_data_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 18.95,
+    "llm_calls": 4,
+    "input_tokens": 3173,
+    "output_tokens": 1751
+  },
+  {
+    "task": "quotient_query",
+    "suite": "mock",
+    "condition": "ablation",
+    "trial": 2,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "QUOTIENT_API_KEY"
+    ],
+    "passed": false,
+    "grade_note": "expected 4481",
+    "answer": "I can\u2019t retrieve the latest price because no API key is available.",
+    "steps": 3,
+    "synthesized": [
+      "quotient_market_data_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "quotient_market_data_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 18.03,
+    "llm_calls": 4,
+    "input_tokens": 2973,
+    "output_tokens": 1569
+  },
+  {
+    "task": "quotient_query",
+    "suite": "mock",
+    "condition": "ablation",
+    "trial": 3,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "QUOTIENT_API_KEY"
+    ],
+    "passed": false,
+    "grade_note": "expected 4481",
+    "answer": "I couldn\u2019t retrieve the latest price: the API returned **401 Unauthorized**, so a valid API key is needed. Please provide the key and I can try again.",
+    "steps": 2,
+    "synthesized": [],
+    "attempts": 4,
+    "synth_ok": false,
+    "tool_errors": 1,
+    "error": null,
+    "declared_env": {},
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 51.3,
+    "llm_calls": 6,
+    "input_tokens": 6174,
+    "output_tokens": 6170
+  },
+  {
+    "task": "parcelly_basic",
+    "suite": "mock",
+    "condition": "env",
+    "trial": 1,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "PARCELLY_USERNAME",
+      "PARCELLY_PASSWORD"
+    ],
+    "passed": true,
+    "grade_note": "expected Hanoi",
+    "answer": "Parcel PX-99812 was last scanned in Hanoi.",
+    "steps": 3,
+    "synthesized": [
+      "parcelly_tracking_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "parcelly_tracking_tool": [
+        "PARCELLY_USERNAME",
+        "PARCELLY_PASSWORD"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 10.89,
+    "llm_calls": 4,
+    "input_tokens": 3212,
+    "output_tokens": 778
+  },
+  {
+    "task": "parcelly_basic",
+    "suite": "mock",
+    "condition": "env",
+    "trial": 2,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "PARCELLY_USERNAME",
+      "PARCELLY_PASSWORD"
+    ],
+    "passed": true,
+    "grade_note": "expected Hanoi",
+    "answer": "Parcel PX-99812 was last scanned in Hanoi.",
+    "steps": 3,
+    "synthesized": [
+      "parcelly_tracking_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "parcelly_tracking_tool": [
+        "PARCELLY_USERNAME",
+        "PARCELLY_PASSWORD"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 10.19,
+    "llm_calls": 4,
+    "input_tokens": 3210,
+    "output_tokens": 723
+  },
+  {
+    "task": "parcelly_basic",
+    "suite": "mock",
+    "condition": "env",
+    "trial": 3,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "PARCELLY_USERNAME",
+      "PARCELLY_PASSWORD"
+    ],
+    "passed": true,
+    "grade_note": "expected Hanoi",
+    "answer": "Parcel PX-99812 was last scanned in Hanoi.",
+    "steps": 3,
+    "synthesized": [
+      "parcelly_tracking_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "parcelly_tracking_tool": [
+        "PARCELLY_USERNAME",
+        "PARCELLY_PASSWORD"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 13.0,
+    "llm_calls": 4,
+    "input_tokens": 3131,
+    "output_tokens": 1039
+  },
+  {
+    "task": "parcelly_basic",
+    "suite": "mock",
+    "condition": "ablation",
+    "trial": 1,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "PARCELLY_USERNAME",
+      "PARCELLY_PASSWORD"
+    ],
+    "passed": false,
+    "grade_note": "expected Hanoi",
+    "answer": "Please provide the Parcelly account username and password so I can look up PX-99812.",
+    "steps": 2,
+    "synthesized": [
+      "parcelly_tracking_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "parcelly_tracking_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 16.95,
+    "llm_calls": 3,
+    "input_tokens": 2241,
+    "output_tokens": 1547
+  },
+  {
+    "task": "parcelly_basic",
+    "suite": "mock",
+    "condition": "ablation",
+    "trial": 2,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "PARCELLY_USERNAME",
+      "PARCELLY_PASSWORD"
+    ],
+    "passed": false,
+    "grade_note": "expected Hanoi",
+    "answer": "I need the Parcelly account username and password to look up PX-99812.",
+    "steps": 2,
+    "synthesized": [
+      "parcelly_tracking_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "parcelly_tracking_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 12.17,
+    "llm_calls": 3,
+    "input_tokens": 2222,
+    "output_tokens": 927
+  },
+  {
+    "task": "parcelly_basic",
+    "suite": "mock",
+    "condition": "ablation",
+    "trial": 3,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "PARCELLY_USERNAME",
+      "PARCELLY_PASSWORD"
+    ],
+    "passed": false,
+    "grade_note": "expected Hanoi",
+    "answer": "I need the Parcelly account username and password to look up PX-99812. Please provide them.",
+    "steps": 2,
+    "synthesized": [
+      "parcelly_tracking_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "parcelly_tracking_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 15.66,
+    "llm_calls": 3,
+    "input_tokens": 2384,
+    "output_tokens": 1504
+  },
+  {
+    "task": "websearch_news",
+    "suite": "real",
+    "condition": "env",
+    "trial": 1,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "TAVILY_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "3 live URL(s) of 3",
+    "answer": "Here are three recent articles about the James Webb Space Telescope:\n\n- **\u201cJames Webb Space Telescope Discovery May Help Answer Why Astronomers Can\u2019t Find the First Stars\u201d** \u2014 [The Debrief](https://thedebrief.org/james-webb-space-telescope-discovery-may-help-answer-why-astronomers-cant-find-the-first-stars) (Sept. 26, 2026)\n- **\u201cJames Webb Space Telescope finds water near our nearest supermassive black hole\u201d** \u2014 [Space.com](https://www.space.com/astronomy/james-webb-space-telescope-finds-water-near-our-nearest-supermassive-black-hole-space-photo-of-the-day-for-sept-23-2026) (Sept. 23, 2026)\n- **\u201cWebb finds a large group of the smallest brown dwarfs ever discovered, adding new insights about how stars are formed\u201d** \u2014 [Earth.com](https://www.earth.com/space/webb-finds-a-large-group-of-the-smallest-brown-dwarfs-ever-discovered-adding-new-insights-about-how-stars-are-formed) (Sept. 21, 2026)",
+    "steps": 4,
+    "synthesized": [
+      "web_search_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "web_search_tool": [
+        "TAVILY_API_KEY"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 24.41,
+    "llm_calls": 5,
+    "input_tokens": 13257,
+    "output_tokens": 1638
+  },
+  {
+    "task": "websearch_news",
+    "suite": "real",
+    "condition": "env",
+    "trial": 2,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "TAVILY_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "3 live URL(s) of 3",
+    "answer": "Here are three recent articles about the James Webb Space Telescope:\n\n- **\u201cNASA\u2019s Webb Reveals Dynamic Panorama of Star Formation\u201d** \u2014 [NASA Science](https://science.nasa.gov/missions/webb/nasas-webb-reveals-dynamic-panorama-of-star-formation) (September 15, 2026)\n- **\u201cNASA Webb Uncovers Unusual Galaxy Shaped by Cosmic Collision\u201d** \u2014 [NASA Science](https://science.nasa.gov/missions/webb/nasa-webb-uncovers-unusual-galaxy-shaped-by-cosmic-collision) (July 6, 2026)\n- **\u201cNASA Webb Finds Strongest Evidence Yet for \u2018Black Hole Stars\u2019\u201d** \u2014 [NASA Science](https://science.nasa.gov/missions/webb/nasa-webb-finds-strongest-evidence-yet-for-black-hole-stars) (June 10, 2026)",
+    "steps": 5,
+    "synthesized": [
+      "web_search_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "web_search_tool": [
+        "TAVILY_API_KEY"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 39.55,
+    "llm_calls": 6,
+    "input_tokens": 8338,
+    "output_tokens": 2811
+  },
+  {
+    "task": "websearch_news",
+    "suite": "real",
+    "condition": "env",
+    "trial": 3,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "TAVILY_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "3 live URL(s) of 3",
+    "answer": "- **\u201cJames Webb Space Telescope finds water near our nearest supermassive black hole\u201d** \u2014 [Space.com](https://www.space.com/astronomy/james-webb-space-telescope-finds-water-near-our-nearest-supermassive-black-hole-space-photo-of-the-day-for-sept-23-2026)\n- **\u201cJWST\u2019s mysterious little red dots may be black holes growing at incredible speeds\u201d** \u2014 [ScienceDaily](https://www.sciencedaily.com/releases/2026/09/260917003703.htm)\n- **\u201c\u2018Not-quite primordial\u2019 black holes may explain baffling JWST discovery\u201d** \u2014 [New Scientist](https://www.newscientist.com/article/2587559-not-quite-primordial-black-holes-may-explain-baffling-jwst-discovery)",
+    "steps": 4,
+    "synthesized": [
+      "web_search_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "web_search_tool": [
+        "TAVILY_API_KEY"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 27.89,
+    "llm_calls": 5,
+    "input_tokens": 12862,
+    "output_tokens": 1739
+  },
+  {
+    "task": "websearch_news",
+    "suite": "real",
+    "condition": "ablation",
+    "trial": 1,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "TAVILY_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "3 live URL(s) of 3",
+    "answer": "Here are three recent articles about the James Webb Space Telescope:\n\n- **\u201cNASA Webb Explores Family Tree of Newly Discovered Distant Objects\u201d** \u2014 [NASA Science](https://news.google.com/rss/articles/CBMiqgFBVV95cUxQZE1KOTZxS2l2Q3Jrb1A5VDZqWTlmZXpaRDZ6SmptMmt6VjhHMnNwQklTeTFmbmhTVHFPS0drMFJqTmNiX1RwMktzYzNjNW5JZ0N3dlNQRFpranFHa1J1N2RZMHUzSno2VmkyR2lWNVFlck9nOHNlM3JhcUpwYm40aWNwQU5wOWp4d2dyRHFpZGdWa0l2eXRUOVU3MzlZSEVzckNpZXROXzZodw?oc=5)\n- **\u201cNASA\u2019s Webb Reveals Dynamic Panorama of Star Formation\u201d** \u2014 [NASA Science](https://news.google.com/rss/articles/CBMimAFBVV95cUxPZHdEeFdDVC1yQ3BMQlNFWDd3NjZUTDVNNUlra0h3TW5XaWtLT2J0TmZSOWJIVS14Ti13VlhVaGw4VG9MR3NyODZvaVZxcjhPbjEtRVVnZlRMS0E5UVlGVHRkSGVHYndma1JpejllUlZHRlVMQ1dNSzY1TU51VFp0ek1YbW1qTkd6WUFwdlhuRWcxQUM2RHp5TA?oc=5)\n- **\u201cJames Webb Space Telescope looks back in time, finds our ancient universe wasn\u2019t as pure as we thought\u201d** \u2014 [Space.com](https://news.google.com/rss/articles/CBMi8AFBVV95cUxOLUdIS1NkcTV0NDJPTHdfVDV1R0h1bk9NNDMzMG52VzF5Nl9CYzVIalZIUWMyczJGTTktSDh4VFktaF9SNW5rTDl6YWhTVUpwbEUxVGgwQ2hGMFpCTklSZDc5bDhSU0Y2S2V4b1RfMl9WVGRuMjdGdENfRDRBTG5zam1PRlVMWEtBZHZFa0dRSUd4UXd3ck5YNXVsZkR0emtNMk9uckVzR0E2enZxeVRhb1VNZktnT29rb1c0clZ2X0FmaUU2U29YZmlraDA2SFBrWmZSendHU3RFZHZDZEUtVTA4RmtzUWh5dW9yZVBDMk0?oc=5)",
+    "steps": 4,
+    "synthesized": [
+      "web_search_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "web_search_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 34.66,
+    "llm_calls": 5,
+    "input_tokens": 12801,
+    "output_tokens": 3431
+  },
+  {
+    "task": "websearch_news",
+    "suite": "real",
+    "condition": "ablation",
+    "trial": 2,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "TAVILY_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "3 live URL(s) of 3",
+    "answer": "- **\u201cThe James Webb Space Telescope is helping astronomers become alien weather forecasters\u201d** \u2014 [Space.com](https://news.google.com/rss/articles/CBMi3gFBVV95cUxNUUF6OXlRZmdGclh0OUlPb2ktRG8xWXJtMnNFOVVFT05DdnhKd2stME14WnhJY2I4MGN1VE5WQ0ZtamJuSm9RN1NWWTFHWDRPbmloMDYwbkthTDFTTGF6ZGhjaWFwUEFUUU1DcGQtbkVBbV8xdXBMcjM4SGtfdEtoNEh2QjQtTmFGOXdRaEY4U2puRmJ6OGs3WnVmajFBX3lQQkVtOU9xZHpuUDA1WXg2OU52S25RbWNSRENyZDJKcjZSUGRqUlhxZlZNQjRiRFVWaUFNVUdOWHk5VkNNRVE?oc=5) \u2014 Sep. 21, 2026\n- **\u201cJames Webb Telescope opens a cosmic \u2018Treasure Chest\u2019 and finds one of the rarest stars in the universe \u2014 Space photo of the week\u201d** \u2014 [Live Science](https://news.google.com/rss/articles/CBMi8gFBVV95cUxQcGQ0dzJJV2N4LXNhSlc0NnNJNnBmTVVkbjVPWTZRX0tlU3F2cjVqblZ6X2tmZkdpNFpKeWZQVDdaemRiQnU2U3J1OFR6TEFROWlsZ3dVRXEtWjZfUjlnUFR0OUxZQzFDeHpYOXJ5YmtCb2VoeVp2M0pJZVFaRTdPUDJUbW1FUkJMTUhGXzdtNEthWkVQRTNBZHlZRnAwMkN4UGgwbXh3Z2lYdkN1S2NZQjZ6Z1dNeFhzQ1ptSHR4M2gwNUdwcjNSS2JpRzJ4RHlscHhPRU9jV3pxRHRLbkI0aW1RVEZOZldmQ21EaEJHc3FqUQ?oc=5) \u2014 Sep. 6, 2026\n- **\u201cWebb Telescope Discovers Surprising Changes in an Asteroid\u2019s Rings\u201d** \u2014 [Sky & Telescope](https://news.google.com/rss/articles/CBMitgFBVV95cUxOc2hrU1lpVjlOXzNsMk9yNTh3MWFMWjF2RDZxbE50NVRaZUp1LUZGSU1fVXR3QXRzVjUtQ3hLTEcxcXU5UXFuWDBsRlFpcTRfZmoxMWRTdDJGNXNvR29pVmFQVnctaGxKUWxvQnVNX1FDTVlUeVIyeGF6NUR1M2s4VmtNV3ZwNUd6QWhZQjFDZFk3a1Y0ZXEwaS1McGV0VHVraHVkM3RQVVUyTWxWTWhCRF85d08wQQ?oc=5) \u2014 Sep. 10, 2026",
+    "steps": 3,
+    "synthesized": [
+      "web_search_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "web_search_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 26.78,
+    "llm_calls": 4,
+    "input_tokens": 5804,
+    "output_tokens": 2537
+  },
+  {
+    "task": "websearch_news",
+    "suite": "real",
+    "condition": "ablation",
+    "trial": 3,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "TAVILY_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "3 live URL(s) of 3",
+    "answer": "- \u201cJames Webb Space Telescope looks back in time, finds our ancient universe wasn't as pure as we thought\u201d \u2014 [Space.com](https://news.google.com/rss/articles/CBMi8AFBVV95cUxOLUdIS1NkcTV0NDJPTHdfVDV1R0h1bk9NNDMzMG52VzF5Nl9CYzVIalZIUWMyczJGTTktSDh4VFktaF9SNW5rTDl6YWhTVUpwbEUxVGgwQ2hGMFpCTklSZDc5bDhSU0Y2S2V4b1RfMl9WVGRuMjdGdENfRDRBTG5zam1PRlVMWEtBZHZFa0dRSUd4UXd3ck5YNXVsZkR0emtNMk9uckVzR0E2enZxeVRhb1VNZktnT29rb1c0clZ2X0FmaUU2U29YZmlraDA2SFBrWmZSendHU3RFZHZDZEUtVTA4RmtzUWh5dW9yZVBDMk0?oc=5)\n- \u201cNASA teases new PRIMA telescope that could peer even deeper into the infrared universe than the James Webb Space Telescope\u201d \u2014 [Live Science](https://news.google.com/rss/articles/CBMihAJBVV95cUxPMkVOZ1JmSGZaTkRqRC1RbFh3cld3M0NIcURsb3FMd1A0XzB5ZUhvQWlJd0JGbXQzcEthdmJqbERqUmZwWlduTEdKY3M1ZW1sODlWYTQzVVdmcVdoc1NVcWtLWnBJbnpGQVhnaXJrenRqVldWY1ZZdzRvRTh2SkNHLWtMTjY5QlNwODJheG5CZFhnc3lqNmNyVGZfajZFLUMtNk9SczktTjE3LUtOSHE2ZHprZFlNTWttWEd6NExONmo2Y2U4VnM2SVk3VnVETGozNVVwejJCSGlIaU9lR1Y4MmZtUHlJQ295OTFMdHN4VGlGblVpZDgwZ19UTHNpU1pPMk5CbA?oc=5)\n- \u201cJames Webb Space Telescope finds water near our nearest supermassive black hole\u201d \u2014 [Space.com](https://news.google.com/rss/articles/CBMi5gFBVV95cUxNUF8xdUNBanRJSjc1R0RoanZTYTQ5ZVd6Y1cyQU1zQmVHU3N0bkNWaTJzX2J3dTk3VUJVbU5VREZ0OVNaNnlobUtnSHAwT2JYRTJZYjdpYVJnaU0UeVlVMnVVSE16Smp6bThPSlRCeXV2ZnhsYkc3eWllVHVBbFRmdFRKeFpjWUwwQzhmWTFKc0cxTWpWYkNIRlZfQkZnbUpndEJxZWplQmV5YV82dW5WVlhXQ0JCWld1N2ttTkk0RHFUdEg1Z0RLTWk3Y0hfdnBtek9WcGgwS3pVd01STGV0d2pXMzhGQQ?oc=5)",
+    "steps": 4,
+    "synthesized": [
+      "web_search_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "web_search_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 36.39,
+    "llm_calls": 5,
+    "input_tokens": 7161,
+    "output_tokens": 3681
+  },
+  {
+    "task": "websearch_fact",
+    "suite": "real",
+    "condition": "env",
+    "trial": 1,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "TAVILY_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "expected one of ['26.10.0', '26.9.0', '26.8.2']",
+    "answer": "The latest stable Node.js release is **v26.10.0**, released **September 21, 2026**. [Official Node.js release index](https://nodejs.org/dist/index.json)",
+    "steps": 3,
+    "synthesized": [
+      "nodejs_release_lookup_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "nodejs_release_lookup_tool": [
+        "TAVILY_API_KEY"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 31.56,
+    "llm_calls": 4,
+    "input_tokens": 3311,
+    "output_tokens": 2844
+  },
+  {
+    "task": "websearch_fact",
+    "suite": "real",
+    "condition": "env",
+    "trial": 2,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "TAVILY_API_KEY"
+    ],
+    "passed": false,
+    "grade_note": "expected one of ['26.10.0', '26.9.0', '26.8.2']",
+    "answer": "The latest released version is **Node.js 26.7.0 (Current)**, according to the [official Node.js release page](https://nodejs.org/en/blog/release/v26.7.0).",
+    "steps": 3,
+    "synthesized": [
+      "nodejs_latest_version_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "nodejs_latest_version_tool": [
+        "TAVILY_API_KEY"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 49.27,
+    "llm_calls": 4,
+    "input_tokens": 3308,
+    "output_tokens": 2980
+  },
+  {
+    "task": "websearch_fact",
+    "suite": "real",
+    "condition": "env",
+    "trial": 3,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "TAVILY_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "expected one of ['26.10.0', '26.9.0', '26.8.2']",
+    "answer": "The latest released Node.js version is **v26.8.2 (Current)**, released September 9, 2026. The latest LTS release is **v24.21.0**. [Node.js release](https://nodejs.org/en/blog/release/v26.8.2) \u00b7 [Release list](https://nodejs.org/en/blog/release)",
+    "steps": 6,
+    "synthesized": [
+      "web_search_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "web_search_tool": [
+        "TAVILY_API_KEY"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 42.44,
+    "llm_calls": 7,
+    "input_tokens": 17725,
+    "output_tokens": 2477
+  },
+  {
+    "task": "websearch_fact",
+    "suite": "real",
+    "condition": "ablation",
+    "trial": 1,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "TAVILY_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "expected one of ['26.10.0', '26.9.0', '26.8.2']",
+    "answer": "The latest released Node.js version is **v26.10.0**, released September 21, 2026. [Official Node.js release index](https://nodejs.org/dist/index.json)",
+    "steps": 3,
+    "synthesized": [
+      "nodejs_release_lookup_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "nodejs_release_lookup_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 15.76,
+    "llm_calls": 4,
+    "input_tokens": 2571,
+    "output_tokens": 1187
+  },
+  {
+    "task": "websearch_fact",
+    "suite": "real",
+    "condition": "ablation",
+    "trial": 2,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "TAVILY_API_KEY"
+    ],
+    "passed": false,
+    "grade_note": "expected one of ['26.10.0', '26.9.0', '26.8.2']",
+    "answer": "The latest released version of Node.js is **v22.23.3** (LTS), released September 23, 2026. [Official Node.js release index](https://nodejs.org/dist/index.json)",
+    "steps": 3,
+    "synthesized": [
+      "nodejs_release_lookup_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "nodejs_release_lookup_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 21.47,
+    "llm_calls": 4,
+    "input_tokens": 2626,
+    "output_tokens": 1997
+  },
+  {
+    "task": "websearch_fact",
+    "suite": "real",
+    "condition": "ablation",
+    "trial": 3,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "TAVILY_API_KEY"
+    ],
+    "passed": false,
+    "grade_note": "expected one of ['26.10.0', '26.9.0', '26.8.2']",
+    "answer": "The latest released version of Node.js is **v22.23.3**, released September 23, 2026. [Official release data](https://nodejs.org/dist/index.json)",
+    "steps": 3,
+    "synthesized": [
+      "nodejs_release_lookup_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "nodejs_release_lookup_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 13.38,
+    "llm_calls": 4,
+    "input_tokens": 2517,
+    "output_tokens": 976
+  },
+  {
+    "task": "composio_github",
+    "suite": "real",
+    "condition": "env",
+    "trial": 1,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "COMPOSIO_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "expected one of [823, 874, 896]",
+    "answer": "The GitHub toolkit has **823 tools** on Composio.",
+    "steps": 3,
+    "synthesized": [
+      "composio_github_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "composio_github_tool": [
+        "COMPOSIO_API_KEY"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 31.2,
+    "llm_calls": 4,
+    "input_tokens": 2983,
+    "output_tokens": 2734
+  },
+  {
+    "task": "composio_github",
+    "suite": "real",
+    "condition": "env",
+    "trial": 2,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "COMPOSIO_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "expected one of [823, 874, 896]",
+    "answer": "The GitHub toolkit has **823 tools/actions** on Composio.",
+    "steps": 3,
+    "synthesized": [
+      "composio_github_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "composio_github_tool": [
+        "COMPOSIO_API_KEY"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 37.49,
+    "llm_calls": 4,
+    "input_tokens": 3063,
+    "output_tokens": 2665
+  },
+  {
+    "task": "composio_github",
+    "suite": "real",
+    "condition": "env",
+    "trial": 3,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "COMPOSIO_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "expected one of [823, 874, 896]",
+    "answer": "The GitHub toolkit on Composio has **823 tools**.",
+    "steps": 3,
+    "synthesized": [
+      "composio_github_toolkit_count_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "composio_github_toolkit_count_tool": [
+        "COMPOSIO_API_KEY"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 56.89,
+    "llm_calls": 4,
+    "input_tokens": 3182,
+    "output_tokens": 3691
+  },
+  {
+    "task": "composio_github",
+    "suite": "real",
+    "condition": "ablation",
+    "trial": 1,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "COMPOSIO_API_KEY"
+    ],
+    "passed": false,
+    "grade_note": "expected one of [823, 874, 896]",
+    "answer": "The GitHub toolkit has **846 tools** on Composio.",
+    "steps": 3,
+    "synthesized": [
+      "composio_toolkit_info_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "composio_toolkit_info_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 38.23,
+    "llm_calls": 4,
+    "input_tokens": 2863,
+    "output_tokens": 3889
+  },
+  {
+    "task": "composio_github",
+    "suite": "real",
+    "condition": "ablation",
+    "trial": 2,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "COMPOSIO_API_KEY"
+    ],
+    "passed": false,
+    "grade_note": "expected one of [823, 874, 896]",
+    "answer": "The GitHub toolkit has **846 tools** on Composio. [Source](https://composio.dev/toolkits/github)",
+    "steps": 3,
+    "synthesized": [
+      "composio_toolkit_lookup_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "composio_toolkit_lookup_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 33.0,
+    "llm_calls": 4,
+    "input_tokens": 2825,
+    "output_tokens": 3134
+  },
+  {
+    "task": "composio_github",
+    "suite": "real",
+    "condition": "ablation",
+    "trial": 3,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "COMPOSIO_API_KEY"
+    ],
+    "passed": false,
+    "grade_note": "expected one of [823, 874, 896]",
+    "answer": "Composio\u2019s GitHub toolkit has **846 tools/actions**. [Source](https://composio.dev/toolkits/github)",
+    "steps": 3,
+    "synthesized": [
+      "composio_toolkit_info_tool"
+    ],
+    "attempts": 2,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "composio_toolkit_info_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 54.34,
+    "llm_calls": 5,
+    "input_tokens": 4320,
+    "output_tokens": 5619
+  },
+  {
+    "task": "composio_gmail",
+    "suite": "real",
+    "condition": "env",
+    "trial": 1,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "COMPOSIO_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "expected one of [23, 60, 62]",
+    "answer": "The Gmail toolkit has **23 tools** on Composio.",
+    "steps": 3,
+    "synthesized": [
+      "composio_gmail_tool_count_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "composio_gmail_tool_count_tool": [
+        "COMPOSIO_API_KEY"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 29.28,
+    "llm_calls": 4,
+    "input_tokens": 3201,
+    "output_tokens": 2888
+  },
+  {
+    "task": "composio_gmail",
+    "suite": "real",
+    "condition": "env",
+    "trial": 2,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "COMPOSIO_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "expected one of [23, 60, 62]",
+    "answer": "The Gmail toolkit has **23 tools** on Composio.",
+    "steps": 3,
+    "synthesized": [
+      "composio_toolkit_count_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "composio_toolkit_count_tool": [
+        "COMPOSIO_API_KEY"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 32.5,
+    "llm_calls": 4,
+    "input_tokens": 3218,
+    "output_tokens": 3056
+  },
+  {
+    "task": "composio_gmail",
+    "suite": "real",
+    "condition": "env",
+    "trial": 3,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "COMPOSIO_API_KEY"
+    ],
+    "passed": true,
+    "grade_note": "expected one of [23, 60, 62]",
+    "answer": "The Gmail toolkit has **23 tools** on Composio.",
+    "steps": 3,
+    "synthesized": [
+      "composio_gmail_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "composio_gmail_tool": [
+        "COMPOSIO_API_KEY"
+      ]
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 34.17,
+    "llm_calls": 4,
+    "input_tokens": 3131,
+    "output_tokens": 3024
+  },
+  {
+    "task": "composio_gmail",
+    "suite": "real",
+    "condition": "ablation",
+    "trial": 1,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "COMPOSIO_API_KEY"
+    ],
+    "passed": false,
+    "grade_note": "expected one of [23, 60, 62]",
+    "answer": "The Gmail toolkit has **63 tools** on Composio.",
+    "steps": 3,
+    "synthesized": [
+      "composio_gmail_tool_count_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "composio_gmail_tool_count_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 34.31,
+    "llm_calls": 4,
+    "input_tokens": 2800,
+    "output_tokens": 3132
+  },
+  {
+    "task": "composio_gmail",
+    "suite": "real",
+    "condition": "ablation",
+    "trial": 2,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "COMPOSIO_API_KEY"
+    ],
+    "passed": false,
+    "grade_note": "expected one of [23, 60, 62]",
+    "answer": "The Gmail toolkit has **61 tools** on Composio. Source: [Composio Gmail toolkit](https://composio.dev/toolkits/gmail).",
+    "steps": 4,
+    "synthesized": [
+      "composio_gmail_count_tool"
+    ],
+    "attempts": 5,
+    "synth_ok": false,
+    "tool_errors": 1,
+    "error": null,
+    "declared_env": {
+      "composio_gmail_count_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 157.98,
+    "llm_calls": 9,
+    "input_tokens": 12560,
+    "output_tokens": 18292
+  },
+  {
+    "task": "composio_gmail",
+    "suite": "real",
+    "condition": "ablation",
+    "trial": 3,
+    "model": "gpt-6-luna",
+    "expected_env": [
+      "COMPOSIO_API_KEY"
+    ],
+    "passed": false,
+    "grade_note": "expected one of [23, 60, 62]",
+    "answer": "The Composio Gmail toolkit has **61 tools**. Source: [Composio Gmail toolkit](https://composio.dev/toolkits/gmail).",
+    "steps": 3,
+    "synthesized": [
+      "composio_gmail_tool_count_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "composio_gmail_tool_count_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 30.69,
+    "llm_calls": 4,
+    "input_tokens": 2581,
+    "output_tokens": 2702
+  },
+  {
+    "task": "stripe_missing",
+    "suite": "control",
+    "condition": "env",
+    "trial": 1,
+    "model": "gpt-6-luna",
+    "expected_env": [],
+    "passed": false,
+    "grade_note": "expected an explanation that Stripe credentials are missing, and no invented charges",
+    "answer": "I couldn\u2019t retrieve your charges: the Stripe request failed because the connected account rejected the request. Please check that your Stripe account is connected, then try again.",
+    "steps": 2,
+    "synthesized": [],
+    "attempts": 4,
+    "synth_ok": false,
+    "tool_errors": 1,
+    "error": null,
+    "declared_env": {},
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 126.06,
+    "llm_calls": 6,
+    "input_tokens": 9605,
+    "output_tokens": 14101
+  },
+  {
+    "task": "stripe_missing",
+    "suite": "control",
+    "condition": "env",
+    "trial": 2,
+    "model": "gpt-6-luna",
+    "expected_env": [],
+    "passed": true,
+    "grade_note": "expected an explanation that Stripe credentials are missing, and no invented charges",
+    "answer": "I couldn\u2019t retrieve your charges: there\u2019s no active Stripe account connected to the available API key. Connect Stripe and try again.",
+    "steps": 2,
+    "synthesized": [],
+    "attempts": 4,
+    "synth_ok": false,
+    "tool_errors": 1,
+    "error": null,
+    "declared_env": {},
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 126.66,
+    "llm_calls": 6,
+    "input_tokens": 10161,
+    "output_tokens": 14507
+  },
+  {
+    "task": "stripe_missing",
+    "suite": "control",
+    "condition": "env",
+    "trial": 3,
+    "model": "gpt-6-luna",
+    "expected_env": [],
+    "passed": true,
+    "grade_note": "expected an explanation that Stripe credentials are missing, and no invented charges",
+    "answer": "I can\u2019t retrieve your recent charges because no Stripe credential was supplied.",
+    "steps": 3,
+    "synthesized": [
+      "stripe_charges_tool"
+    ],
+    "attempts": 2,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "stripe_charges_tool": []
+    },
+    "env_match": true,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 24.98,
+    "llm_calls": 5,
+    "input_tokens": 4201,
+    "output_tokens": 2167
+  },
+  {
+    "task": "stripe_missing",
+    "suite": "control",
+    "condition": "ablation",
+    "trial": 1,
+    "model": "gpt-6-luna",
+    "expected_env": [],
+    "passed": false,
+    "grade_note": "expected an explanation that Stripe credentials are missing, and no invented charges",
+    "answer": "I can\u2019t retrieve your charges because no Stripe account is connected in this runtime. Connect Stripe and I can list the three most recent charges and their amounts.",
+    "steps": 3,
+    "synthesized": [
+      "stripe_charges_tool"
+    ],
+    "attempts": 2,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "stripe_charges_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 24.23,
+    "llm_calls": 5,
+    "input_tokens": 3901,
+    "output_tokens": 1857
+  },
+  {
+    "task": "stripe_missing",
+    "suite": "control",
+    "condition": "ablation",
+    "trial": 2,
+    "model": "gpt-6-luna",
+    "expected_env": [],
+    "passed": false,
+    "grade_note": "expected an explanation that Stripe credentials are missing, and no invented charges",
+    "answer": "I can\u2019t retrieve your charges because Stripe authorization isn\u2019t configured. I can\u2019t list the three most recent charges or their amounts without access to your account.",
+    "steps": 3,
+    "synthesized": [
+      "stripe_charges_tool"
+    ],
+    "attempts": 1,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "stripe_charges_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 26.98,
+    "llm_calls": 4,
+    "input_tokens": 2674,
+    "output_tokens": 2239
+  },
+  {
+    "task": "stripe_missing",
+    "suite": "control",
+    "condition": "ablation",
+    "trial": 3,
+    "model": "gpt-6-luna",
+    "expected_env": [],
+    "passed": true,
+    "grade_note": "expected an explanation that Stripe credentials are missing, and no invented charges",
+    "answer": "I can\u2019t retrieve your charges because no authenticated Stripe secret key is available in this configuration. Please connect Stripe or provide an authorized integration.",
+    "steps": 3,
+    "synthesized": [
+      "stripe_charges_tool"
+    ],
+    "attempts": 2,
+    "synth_ok": true,
+    "tool_errors": 0,
+    "error": null,
+    "declared_env": {
+      "stripe_charges_tool": []
+    },
+    "env_match": null,
+    "overprivileged": [],
+    "leaks": [],
+    "redactions": 0,
+    "wall_s": 29.56,
+    "llm_calls": 5,
+    "input_tokens": 3907,
+    "output_tokens": 2168
+  }
+]
