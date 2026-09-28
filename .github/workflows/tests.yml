@@ -12,8 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/ruff-action@v4
-      - run: ruff format --check
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: python -m pip install "ruff>=0.16,<0.17" # same pin as the dev extra
+      - run: ruff check .
+      - run: ruff format --check .
 
   test:
     strategy:
