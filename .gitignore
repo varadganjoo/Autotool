@@ -10,3 +10,6 @@ tools/*.py
 .env
 dist/
 build/
+
+# Benchmark transcripts carry the host's own system context; keep them local
+paper/results/**/transcript.txt
