@@ -9,7 +9,9 @@
   with `create_tool`; AutoTool verifies each one in a subprocess, mounts it live
   (`tools/list_changed`, plus `run_tool` for hosts that don't refresh) and keeps it in
   `~/.autotool/tools` for every host on the machine.
-- `synthesize_tool` when a model key is set in `~/.autotool/.env` (install `autotool-mcp[models]`).
+- `synthesize_tool` when a model is configured in `~/.autotool/.env` (install `autotool-mcp[models]`).
+- OpenAI-compatible endpoints (Ollama, LM Studio, vLLM, OpenRouter): set `OPENAI_BASE_URL` and
+  `OPENAI_LLM`; AutoTool uses Chat Completions there, with a JSON fallback for structured output.
 - Credentials by name only: from the host's MCP config (`AUTOTOOL_KEY_*`), the OS keychain
   (`autotool keys add`) or `~/.autotool/.env`. Each tool gets only what it declares in
   `REQUIRED_ENV`, and values a tool echoes back (raw, URL-encoded, JSON-escaped) are redacted

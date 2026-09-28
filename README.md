@@ -46,6 +46,18 @@ print(answer)
 The agent has no Hacker News tool. It writes one, AutoTool verifies and mounts it, and the agent
 uses it. Run it again and the tool is already there.
 
+**Local or other models.** Any OpenAI-compatible endpoint works: Ollama, LM Studio, vLLM,
+OpenRouter, and others. Set a base URL and a model name; local servers need no key.
+
+```bash
+export OPENAI_BASE_URL=http://localhost:11434/v1   # Ollama; LM Studio: http://localhost:1234/v1
+export OPENAI_LLM=qwen2.5:14b                      # the model name on that server
+```
+
+`default_provider()` then talks to that endpoint through the Chat Completions API. Pick a model
+with tool calling. Writing a working tool is real coding, so small models fail more often than
+frontier ones. `AUTOTOOL_PROVIDER=openai` keeps OpenAI's Responses API even with a custom base URL.
+
 **Already have an agent loop?** Connect it to AutoTool and pass tool calls through:
 
 ```python
@@ -96,8 +108,9 @@ exactly what to run (`autotool keys add STRIPE_API_KEY`).
 
 ## Let AutoTool write the tools
 
-If your agent is small or not good at writing code, give AutoTool a model key (`OPENAI_API_KEY` or
-`ANTHROPIC_API_KEY` in `~/.autotool/.env`). Only a key in that file counts: a key your host happens
+If your agent is small or not good at writing code, give AutoTool a model of its own in
+`~/.autotool/.env`: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or an OpenAI-compatible endpoint
+(`OPENAI_BASE_URL` + `OPENAI_LLM`, e.g. a local Ollama model). Only a key in that file counts: a key your host happens
 to have in its environment is never used, so nothing gets billed by surprise. A `synthesize_tool` tool then appears: your agent
 describes the capability, and AutoTool writes, verifies, repairs and mounts it.
 

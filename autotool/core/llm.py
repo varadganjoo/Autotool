@@ -273,15 +273,101 @@ class OpenAIProvider:
         ]
 
 
+def _json_object(text: str) -> str:
+    """The JSON object in a model reply that may wrap it in prose or ``` fences."""
+    start, end = text.find("{"), text.rfind("}")
+    return text[start : end + 1] if start != -1 and end > start else text
+
+
+class OpenAICompatibleProvider:
+    """Chat Completions backend for any OpenAI-compatible server: Ollama, LM Studio, vLLM,
+    OpenRouter, ... (most of them do not implement the Responses API that OpenAIProvider uses).
+
+    base_url / api_key / model default to OPENAI_BASE_URL / OPENAI_API_KEY / OPENAI_LLM; local
+    servers usually need no key."""
+
+    def __init__(self, model: str | None = None, *, base_url: str | None = None, api_key: str | None = None, client: Any = None) -> None:
+        import openai
+
+        self.model = model or os.environ.get("AUTOTOOL_OPENAI_MODEL") or os.environ.get("OPENAI_LLM")
+        if not self.model:
+            raise ValueError("Name the model to use on your OpenAI-compatible endpoint: set OPENAI_LLM "
+                             "(e.g. OPENAI_LLM=qwen2.5:14b for Ollama) or pass model=...")
+        self.client = client or openai.AsyncOpenAI(
+            base_url=base_url or os.environ.get("OPENAI_BASE_URL"),
+            api_key=api_key or os.environ.get("OPENAI_API_KEY") or "not-needed",  # local servers ignore it
+        )
+        self.usage = UsageStats()
+
+    def _record(self, response: Any) -> None:
+        u = getattr(response, "usage", None)
+        self.usage.add(getattr(u, "prompt_tokens", 0), getattr(u, "completion_tokens", 0))
+
+    async def complete(self, *, system: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> LLMTurn:
+        kwargs: dict[str, Any] = {"model": self.model, "messages": [{"role": "system", "content": system}, *messages]}
+        if tools:
+            kwargs["tools"] = [
+                {"type": "function", "function": {"name": t["name"], "description": t.get("description", ""),
+                                                  "parameters": t.get("input_schema") or {"type": "object", "properties": {}}}}
+                for t in tools
+            ]
+        response = await self.client.chat.completions.create(**kwargs)
+        self._record(response)
+        message = response.choices[0].message
+        raw: dict[str, Any] = {"role": "assistant", "content": message.content or ""}
+        calls: list[ToolCall] = []
+        for i, c in enumerate(message.tool_calls or []):
+            call_id = c.id or f"call_{i}"
+            try:
+                args = json.loads(c.function.arguments or "{}")
+            except json.JSONDecodeError:
+                args = {"__invalid_json__": c.function.arguments}
+            calls.append(ToolCall(id=call_id, name=c.function.name, arguments=args if isinstance(args, dict) else {}))
+            raw.setdefault("tool_calls", []).append(
+                {"id": call_id, "type": "function", "function": {"name": c.function.name, "arguments": c.function.arguments or "{}"}}
+            )
+        return LLMTurn(text=message.content or "", tool_calls=calls, stop_reason=response.choices[0].finish_reason, raw_content=raw)
+
+    async def structured(self, *, system: str, prompt: str, output_model: type[T]) -> T:
+        import openai
+
+        schema = output_model.model_json_schema()
+        messages = [
+            {"role": "system", "content": f"{system}\n\nReply with only a JSON object matching this JSON schema:\n{json.dumps(schema)}"},
+            {"role": "user", "content": prompt},
+        ]
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model, messages=messages,
+                response_format={"type": "json_schema", "json_schema": {"name": output_model.__name__, "schema": schema}},
+            )
+        except openai.BadRequestError:  # servers without JSON-schema output: the schema is in the prompt
+            response = await self.client.chat.completions.create(model=self.model, messages=messages)
+        self._record(response)
+        return output_model.model_validate_json(_json_object(response.choices[0].message.content or ""))
+
+    def assistant_message(self, turn: LLMTurn) -> dict[str, Any]:
+        return turn.raw_content
+
+    def tool_results_messages(self, results: list[ToolResult]) -> list[dict[str, Any]]:
+        return [{"role": "tool", "tool_call_id": r.call_id, "content": f"ERROR: {r.content}" if r.is_error else r.content}
+                for r in results]
+
+
 def default_provider(name: str | None = None, model: str | None = None, **kwargs: Any) -> LLMProvider:
-    """``name`` is 'openai' or 'anthropic'; when omitted, pick OpenAI if
-    OPENAI_API_KEY is set, else Anthropic."""
-    name = (name or os.environ.get("AUTOTOOL_PROVIDER") or ("openai" if os.environ.get("OPENAI_API_KEY") else "anthropic")).lower()
+    """``name`` is 'openai', 'openai-compatible' or 'anthropic' (or $AUTOTOOL_PROVIDER). When omitted:
+    an OpenAI-compatible endpoint if OPENAI_BASE_URL is set (Ollama, LM Studio, vLLM, OpenRouter...),
+    else OpenAI if OPENAI_API_KEY is set, else Anthropic."""
+    name = (name or os.environ.get("AUTOTOOL_PROVIDER") or (
+        "openai-compatible" if os.environ.get("OPENAI_BASE_URL") else "openai" if os.environ.get("OPENAI_API_KEY") else "anthropic"
+    )).lower()
+    if name == "openai-compatible":
+        return OpenAICompatibleProvider(model)
     if name == "openai":
         return OpenAIProvider(model, reasoning_effort=kwargs.get("reasoning_effort"))
     if name == "anthropic":
         return AnthropicProvider(model, use_fallbacks=kwargs.get("use_fallbacks", True))
-    raise ValueError(f"Unknown provider {name!r}; expected 'openai' or 'anthropic'")
+    raise ValueError(f"Unknown provider {name!r}; expected 'openai', 'openai-compatible' or 'anthropic'")
 
 
 ChatHandler = Callable[[list[dict[str, Any]], list[dict[str, Any]]], Awaitable[LLMTurn] | LLMTurn]

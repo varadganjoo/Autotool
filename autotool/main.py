@@ -61,7 +61,7 @@ def cli(argv: list[str] | None = None) -> int:
     parser.add_argument("prompt", help="Objective for the agent")
     parser.add_argument(
         "--provider",
-        choices=["openai", "anthropic"],
+        choices=["openai", "openai-compatible", "anthropic"],
         default=None,
         help="LLM backend (default: $AUTOTOOL_PROVIDER, else openai if OPENAI_API_KEY is set, else anthropic)",
     )

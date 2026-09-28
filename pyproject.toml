@@ -11,7 +11,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Varad Ganjoo", email = "varadganjoo@gmail.com" }]
 requires-python = ">=3.11"
-keywords = ["mcp", "model context protocol", "agents", "llm", "tools", "claude code", "codex", "cursor"]
+keywords = ["mcp", "model context protocol", "agents", "llm", "tools", "claude code", "codex", "cursor", "ollama"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",

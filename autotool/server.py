@@ -26,7 +26,14 @@ from pydantic import ValidationError
 
 from autotool.core.credentials import autotool_home, load_tool_env
 from autotool.core.policy import approve, code_hash
-from autotool.core.llm import DEFAULT_MODEL, DEFAULT_OPENAI_MODEL, AnthropicProvider, LLMProvider, OpenAIProvider
+from autotool.core.llm import (
+    DEFAULT_MODEL,
+    DEFAULT_OPENAI_MODEL,
+    AnthropicProvider,
+    LLMProvider,
+    OpenAICompatibleProvider,
+    OpenAIProvider,
+)
 from autotool.core.registry import ToolRegistry
 from autotool.core.schema import CapabilityRequest
 from autotool.core.toolenv import required_env
@@ -245,6 +252,9 @@ def model_provider(home: Path) -> LLMProvider | None:
     found = dotenv_values(home / ".env") if (home / ".env").is_file() else {}
     try:
         # The key (and provider) come only from this file, never from the host's environment.
+        if base_url := found.get("OPENAI_BASE_URL"):  # Ollama, LM Studio, vLLM, OpenRouter... (key optional)
+            return OpenAICompatibleProvider(found.get("AUTOTOOL_OPENAI_MODEL") or found.get("OPENAI_LLM"), base_url=base_url,
+                                            api_key=found.get("OPENAI_API_KEY") or "not-needed")
         if key := found.get("OPENAI_API_KEY"):
             import openai
 
@@ -254,6 +264,9 @@ def model_provider(home: Path) -> LLMProvider | None:
             import anthropic
 
             return AnthropicProvider(found.get("AUTOTOOL_MODEL") or DEFAULT_MODEL, client=anthropic.AsyncAnthropic(api_key=key))
+        return None
+    except ValueError as exc:  # e.g. a base URL without a model name
+        log.warning("synthesize_tool is off: %s", exc)
         return None
     except ImportError as exc:
         log.warning("synthesize_tool is off: %s. Install it with: pip install 'autotool-mcp[models]'", exc)
