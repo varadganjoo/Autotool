@@ -6,7 +6,8 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -164,16 +165,29 @@ class Orchestrator:
             await self.registry.mount(path)
         except SynthesisError as exc:
             self._emit(
-                events, "synthesis", tool_name=request.tool_name, ok=False, attempts=exc.attempts,
-                stage=exc.report.stage, error=exc.report.error, elapsed_s=time.monotonic() - started,
+                events,
+                "synthesis",
+                tool_name=request.tool_name,
+                ok=False,
+                attempts=exc.attempts,
+                stage=exc.report.stage,
+                error=exc.report.error,
+                elapsed_s=time.monotonic() - started,
             )
             return ToolResult(call_id=call.id, content=str(exc), is_error=True)
-        except Exception as exc:  # noqa: BLE001 - report to the LLM rather than crash the run
+        except Exception as exc:
             self._emit(events, "synthesis", tool_name=request.tool_name, ok=False, error=str(exc))
-            return ToolResult(call_id=call.id, content=f"Failed to build or mount tool: {type(exc).__name__}: {exc}", is_error=True)
+            return ToolResult(
+                call_id=call.id, content=f"Failed to build or mount tool: {type(exc).__name__}: {exc}", is_error=True
+            )
 
         self._emit(
-            events, "synthesis", tool_name=request.tool_name, ok=True, attempts=attempts, path=str(path),
+            events,
+            "synthesis",
+            tool_name=request.tool_name,
+            ok=True,
+            attempts=attempts,
+            path=str(path),
             elapsed_s=time.monotonic() - started,
         )
         return ToolResult(call_id=call.id, content=self._describe_server(request.tool_name, origin))

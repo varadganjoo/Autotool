@@ -11,7 +11,7 @@ from tests.test_synthesis import GOOD
 async def test_connect_gives_a_ready_session_and_provider_ready_tool_schemas(tmp_path):
     async with autotool.connect(home=tmp_path / "home") as session:
         created = await session.call_tool("create_tool", {"name": "math_tool", "code": GOOD, "test_arguments": {"a": 1, "b": 2}})
-        assert not created.isError
+        assert not created.is_error
         listed = await session.list_tools()
         openai_tools = autotool.openai_tools(listed)
         anthropic_tools = autotool.anthropic_tools(listed)
@@ -27,11 +27,21 @@ async def test_run_agent_builds_a_tool_and_answers(tmp_path):
         turns += 1
         if turns == 1:
             assert "create_tool" in {t["name"] for t in tools}
-            return LLMTurn(tool_calls=[ToolCall(id="c1", name="create_tool", arguments={
-                "name": "math_tool", "code": GOOD, "test_arguments": {"a": 1, "b": 2}})])
+            return LLMTurn(
+                tool_calls=[
+                    ToolCall(
+                        id="c1",
+                        name="create_tool",
+                        arguments={"name": "math_tool", "code": GOOD, "test_arguments": {"a": 1, "b": 2}},
+                    )
+                ]
+            )
         if turns == 2:
-            return LLMTurn(tool_calls=[ToolCall(id="c2", name="run_tool", arguments={
-                "name": "math_tool__add", "arguments": {"a": 20, "b": 22}})])
+            return LLMTurn(
+                tool_calls=[
+                    ToolCall(id="c2", name="run_tool", arguments={"name": "math_tool__add", "arguments": {"a": 20, "b": 22}})
+                ]
+            )
         return LLMTurn(text="The answer is " + messages[-1]["content"][0]["content"])
 
     provider = ScriptedProvider(chat, lambda prompt, model: None)

@@ -35,11 +35,13 @@ export OPENAI_API_KEY=sk-...        # your agent's model (or ANTHROPIC_API_KEY)
 import asyncio, autotool
 from autotool.core.llm import default_provider
 
-answer = asyncio.run(autotool.run_agent(
-    "What are the top 3 stories on Hacker News right now?",
-    default_provider(),
-    on_consent=lambda question: input(question + " [y/N] ") == "y",  # asked before a tool gets a key
-))
+answer = asyncio.run(
+    autotool.run_agent(
+        "What are the top 3 stories on Hacker News right now?",
+        default_provider(),
+        on_consent=lambda question: input(question + " [y/N] ") == "y",  # asked before a tool gets a key
+    )
+)
 print(answer)
 ```
 
@@ -61,10 +63,10 @@ frontier ones. `AUTOTOOL_PROVIDER=openai` keeps OpenAI's Responses API even with
 **Already have an agent loop?** Connect it to AutoTool and pass tool calls through:
 
 ```python
-async with autotool.connect() as session:                    # starts AutoTool as an MCP server
-    listed = await session.list_tools()                      # create_tool, run_tool, every tool created so far
-    tools = autotool.openai_tools(listed)                     # or autotool.anthropic_tools(listed)
-    result = await session.call_tool(name, arguments)        # whatever your model asked for
+async with autotool.connect() as client:  # starts AutoTool as an MCP server
+    listed = await client.list_tools()  # create_tool, run_tool, every tool created so far
+    tools = autotool.openai_tools(listed)  # or autotool.anthropic_tools(listed)
+    result = await client.call_tool(name, arguments)  # whatever your model asked for
 ```
 
 Frameworks with stdio MCP support (OpenAI Agents SDK `MCPServerStdio`, LangGraph via
@@ -109,33 +111,47 @@ exactly what to run (`autotool keys add STRIPE_API_KEY`).
 ## Let AutoTool write the tools
 
 If your agent is small or not good at writing code, give AutoTool a model of its own in
-`~/.autotool/.env`: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or an OpenAI-compatible endpoint
-(`OPENAI_BASE_URL` + `OPENAI_LLM`, e.g. a local Ollama model). Only a key in that file counts: a key your host happens
-to have in its environment is never used, so nothing gets billed by surprise. A `synthesize_tool` tool then appears: your agent
-describes the capability, and AutoTool writes, verifies, repairs and mounts it.
+`~/.autotool/.env`: `OPENAI_API_KEY` (default model `gpt-6-sol`), `ANTHROPIC_API_KEY` (default
+`claude-opus-5`), or an OpenAI-compatible endpoint (`OPENAI_BASE_URL` + `OPENAI_LLM`, e.g. a local
+Ollama model). Only a key in that file counts: a key your host happens to have in its environment
+is never used, so nothing gets billed by surprise. A `synthesize_tool` tool then appears: your
+agent describes the capability, and AutoTool writes, verifies, repairs and mounts it.
 
 ## What a created tool looks like
 
 ```python
-import os, httpx
-from mcp.server.fastmcp import FastMCP
+import os
 
-REQUIRED_ENV = ["TAVILY_API_KEY"]            # the only credential this process will receive
-mcp = FastMCP("tavily_tool")
+import httpx2
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
+
+REQUIRED_ENV = ["TAVILY_API_KEY"]  # the only credential this process will receive
+mcp = MCPServer("tavily_tool")
 API_BASE = os.environ.get("TAVILY_API_BASE", "https://api.tavily.com")
+
 
 @mcp.tool()
 def search(query: str, max_results: int = 5) -> str:
     """Search the web with Tavily."""
-    with httpx.Client(timeout=10) as client:
-        r = client.post(f"{API_BASE}/search", json={"query": query, "max_results": max_results},
-                        headers={"Authorization": f"Bearer {os.environ['TAVILY_API_KEY']}"})
-        r.raise_for_status()
-        return r.text
+    with httpx2.Client(timeout=10) as client:
+        r = client.post(
+            f"{API_BASE}/search",
+            json={"query": query, "max_results": max_results},
+            headers={"Authorization": f"Bearer {os.environ['TAVILY_API_KEY']}"},
+        )
+    if r.status_code != 200:
+        raise ToolError(f"Tavily returned HTTP {r.status_code}: {r.text[:200]}")
+    return r.text
+
 
 if __name__ == "__main__":
     mcp.run()
 ```
+
+A tool is a plain [MCP](https://modelcontextprotocol.io) server built on the official Python SDK
+(v2). `ToolError` messages reach the agent; an unexpected exception's traceback goes to the
+verifier, which feeds it back so the tool can be fixed.
 
 ## Security
 
@@ -210,15 +226,21 @@ The design and its evaluation are written up in [the paper](https://github.com/v
 | OpenClaw | `autotool setup` (`openclaw mcp set` on releases that have it) | Older releases: setup prints the config snippet to paste. |
 | Anything else | point it at `autotool serve` (stdio) | |
 
+AutoTool speaks both MCP protocol eras: hosts on the 2026-07-28 revision get consent through an
+input-required round trip and hear about new tools on `subscriptions/listen`; older hosts get a
+form elicitation and `notifications/tools/list_changed`.
+
 ## Development
 
 ```bash
 python -m venv venv && venv/bin/pip install -e ".[dev]"   # Windows: venv\Scripts\pip
 pytest                                                     # offline suite
+ruff check . && ruff format --check .                      # lint
 autotool run "What is the top story on Hacker News?"       # demo agent: needs [models] + a key in ./.env;
                                                            # no consent prompts or allowlists, uses ./tools
 python scripts/auth_benchmark.py --trials 3                # credentials benchmark
 python scripts/host_benchmark.py --trials 3                # Claude Code + custom-agent benchmark
 ```
 
-`mcp` is pinned `<2` because `mcp.server.fastmcp.FastMCP` is the 1.x API.
+Built on the MCP Python SDK 2.x, `httpx2`, the OpenAI SDK 3.x (Responses API) and the Anthropic
+SDK 1.x.

@@ -4,10 +4,7 @@ injection, redaction, and an end-to-end run against a local Bearer-auth API."""
 from __future__ import annotations
 
 import json
-import secrets
-import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, quote, quote_plus, urlparse
+from urllib.parse import quote, quote_plus
 
 import pytest
 
@@ -19,6 +16,7 @@ from autotool.core.schema import CapabilityRequest, GeneratedToolCandidate, LLMT
 from autotool.core.toolenv import ToolEnv, required_env
 from autotool.synthesis.repair import SynthesisEngine
 from autotool.synthesis.verifier import ToolVerifier, static_check
+from tests.conftest import BEARER
 from tests.test_synthesis import GOOD, scripted_generator, server
 
 ALPHA = "alpha-" + "a" * 20
@@ -49,7 +47,7 @@ def test_from_dotenv_explicit_missing_file_raises(tmp_path):
 
 
 def test_grant_names_missing_and_available():
-    with pytest.raises(LookupError, match="GAMMA_API_KEY.*available"):
+    with pytest.raises(LookupError, match=r"GAMMA_API_KEY.*available"):
         env().grant(["GAMMA_API_KEY"])
 
 
@@ -59,15 +57,19 @@ def test_grant_names_missing_and_available():
 def test_redact_raw_encoded_and_heuristics():
     special = "k3y+with/special=chars-0123456789"
     odd = "tok_" + "z" * 20
-    tool_env = ToolEnv({
-        "SVC_API_KEY": special,
-        "ODD_NAME": odd,                                     # token-shaped value under a non-secret name
-        "AUTH_MODE": "on",                                   # too short to redact
-        "BASE_URL": "https://api.example.com/v1/long/path",  # URL, not a token
-        "CITY": "San Francisco",
-    })
-    text = (f"{special} {quote(special, safe='')} {quote_plus(special)} {quote(special)} "
-            f"{special.replace('/', chr(92) + '/')} {odd} on https://api.example.com/v1/long/path San Francisco")
+    tool_env = ToolEnv(
+        {
+            "SVC_API_KEY": special,
+            "ODD_NAME": odd,  # token-shaped value under a non-secret name
+            "AUTH_MODE": "on",  # too short to redact
+            "BASE_URL": "https://api.example.com/v1/long/path",  # URL, not a token
+            "CITY": "San Francisco",
+        }
+    )
+    text = (
+        f"{special} {quote(special, safe='')} {quote_plus(special)} {quote(special)} "
+        f"{special.replace('/', chr(92) + '/')} {odd} on https://api.example.com/v1/long/path San Francisco"
+    )
     out = tool_env.redact(text)
     assert out.count("[REDACTED:SVC_API_KEY]") == 5
     assert "[REDACTED:ODD_NAME]" in out
@@ -136,12 +138,14 @@ LEAKY = server(
     '''
     import os
 
+    from mcp.server.mcpserver.exceptions import ToolError
+
     REQUIRED_ENV = ["ALPHA_API_KEY"]
 
     @mcp.tool()
     def leak() -> str:
         """Fail with the key in the message, like an HTTP error that includes the request URL."""
-        raise RuntimeError(f"401 for url https://api.example.com/v1?key={os.environ['ALPHA_API_KEY']}")
+        raise ToolError(f"401 for url https://api.example.com/v1?key={os.environ['ALPHA_API_KEY']}")
     ''',
     name="leaky_tool",
 )
@@ -158,7 +162,7 @@ def test_static_check_rejects_unavailable_env():
 
 
 def test_static_check_rejects_non_literal_declaration():
-    assert "literal" in static_check(GOOD.replace("mcp = FastMCP", "REQUIRED_ENV = list('x')\nmcp = FastMCP"), [])
+    assert "literal" in static_check(GOOD.replace("mcp = MCPServer", "REQUIRED_ENV = list('x')\nmcp = MCPServer"), [])
 
 
 async def test_verifier_injects_only_declared_vars(tmp_path, monkeypatch):
@@ -336,42 +340,11 @@ def test_system_prompt_lists_names_only_when_present():
 
 # ---------------------------------------------------------------- end to end: Bearer-auth API
 
-BEARER = "k3y+with/special=" + secrets.token_hex(8)  # URL-reserved chars on purpose
-
-
-class _BearerAPI(BaseHTTPRequestHandler):
-    def do_GET(self) -> None:  # noqa: N802
-        if self.headers.get("Authorization") != f"Bearer {BEARER}":
-            return self._send(401, {"error": "unauthorized"})
-        city = parse_qs(urlparse(self.path).query).get("city", ["?"])[0]
-        self._send(200, {"city": city, "temp_c": 21})
-
-    def _send(self, code: int, body: dict) -> None:
-        data = json.dumps(body).encode()
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
-
-    def log_message(self, *args) -> None:
-        pass
-
-
-@pytest.fixture
-def bearer_api():
-    srv = ThreadingHTTPServer(("127.0.0.1", 0), _BearerAPI)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-    yield f"http://127.0.0.1:{srv.server_address[1]}"
-    srv.shutdown()
-    srv.server_close()
-
-
 WEATHER_TOOL = server(
     '''
     import os
 
-    import httpx
+    import httpx2
 
     REQUIRED_ENV = ["ACME_API_KEY"]
     API_BASE = os.environ.get("ACME_API_BASE", "https://api.acme.example")
@@ -379,7 +352,7 @@ WEATHER_TOOL = server(
     @mcp.tool()
     def current(city: str) -> str:
         """Current weather for a city."""
-        with httpx.Client(timeout=10) as client:
+        with httpx2.Client(timeout=10) as client:
             AUTH_LINE
             resp.raise_for_status()
             return resp.text
@@ -422,8 +395,18 @@ async def test_end_to_end_bearer_api_repairs_without_leaking(tmp_path, bearer_ap
         nonlocal turns
         turns += 1
         if turns == 1:
-            return LLMTurn(tool_calls=[ToolCall(id="s1", name=SYNTHESIZE_TOOL, arguments={
-                "tool_name": "acme_tool", "capability_description": "Current weather from the Acme API (ACME_API_KEY)."})])
+            return LLMTurn(
+                tool_calls=[
+                    ToolCall(
+                        id="s1",
+                        name=SYNTHESIZE_TOOL,
+                        arguments={
+                            "tool_name": "acme_tool",
+                            "capability_description": "Current weather from the Acme API (ACME_API_KEY).",
+                        },
+                    )
+                ]
+            )
         if turns == 2:
             return LLMTurn(tool_calls=[ToolCall(id="c1", name="acme_tool__current", arguments={"city": "Paris"})])
         return LLMTurn(text=messages[-1]["content"][0]["content"])
@@ -444,9 +427,9 @@ async def test_end_to_end_bearer_api_repairs_without_leaking(tmp_path, bearer_ap
     synth = next(e.detail for e in run.events if e.kind == "synthesis")
     assert synth["ok"] and synth["attempts"] == 2
     sent = "\n".join(provider.sent)
-    assert "ACME_API_KEY" in sent                # the name reaches the LLM ...
-    assert "[REDACTED:ACME_API_KEY]" in sent     # ... the failed draft's error URL was scrubbed ...
-    assert tool_env.leaked(sent) == []           # ... and no encoding of the value got through
+    assert "ACME_API_KEY" in sent  # the name reaches the LLM ...
+    assert "[REDACTED:ACME_API_KEY]" in sent  # ... the failed draft's error URL was scrubbed ...
+    assert tool_env.leaked(sent) == []  # ... and no encoding of the value got through
 
 
 def test_sandbox_env_is_an_allowlist(monkeypatch):
@@ -465,4 +448,6 @@ def test_reserved_values_are_redacted_but_never_granted():
     model_key = "sk-model-" + "m" * 24
     tool_env = ToolEnv({"OPENAI_API_KEY": model_key})
     assert tool_env.names == []
-    assert tool_env.redact(f"read ../.env: OPENAI_API_KEY={model_key}") == "read ../.env: OPENAI_API_KEY=[REDACTED:OPENAI_API_KEY]"
+    assert (
+        tool_env.redact(f"read ../.env: OPENAI_API_KEY={model_key}") == "read ../.env: OPENAI_API_KEY=[REDACTED:OPENAI_API_KEY]"
+    )

@@ -1,5 +1,5 @@
 """Async stdio MCP client that spawns a tool script as a child process and keeps
-a live ``ClientSession`` to it, so tools can be called mid-reasoning without
+a live MCP ``Client`` to it, so tools can be called mid-reasoning without
 restarting the parent runtime."""
 
 from __future__ import annotations
@@ -8,12 +8,12 @@ import os
 import re
 import sys
 import tempfile
+from collections.abc import Iterable
 from contextlib import AsyncExitStack
-from datetime import timedelta
 from pathlib import Path
-from typing import Any, Iterable, TextIO
+from typing import Any, TextIO
 
-from mcp import ClientSession, StdioServerParameters
+from mcp import Client, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.types import CallToolResult, TextContent
 
@@ -25,9 +25,30 @@ _SECRET_ENV_RE = re.compile(r"(API_KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)", re.IG
 # overrides. Hosts such as Claude Code hand MCP servers their whole environment (AWS keys,
 # DATABASE_URL, ...), so this is an allowlist, not a denylist.
 _INHERIT = {
-    "PATH", "PATHEXT", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "TEMP", "TMP", "TMPDIR", "HOME",
-    "USERPROFILE", "APPDATA", "LOCALAPPDATA", "LANG", "LANGUAGE", "TZ", "HTTP_PROXY", "HTTPS_PROXY",
-    "ALL_PROXY", "NO_PROXY", "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE",
+    "PATH",
+    "PATHEXT",
+    "SYSTEMROOT",
+    "SYSTEMDRIVE",
+    "WINDIR",
+    "COMSPEC",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "HOME",
+    "USERPROFILE",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "LANG",
+    "LANGUAGE",
+    "TZ",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "REQUESTS_CA_BUNDLE",
+    "CURL_CA_BUNDLE",
 }
 
 
@@ -57,8 +78,8 @@ def render_call_result(result: CallToolResult) -> str:
             chunks.append(block.text)
         else:
             chunks.append(f"[{block.type} content omitted]")
-    if not chunks and result.structuredContent is not None:
-        chunks.append(str(result.structuredContent))
+    if not chunks and result.structured_content is not None:
+        chunks.append(str(result.structured_content))
     return "\n".join(chunks)
 
 
@@ -78,11 +99,11 @@ class DynamicMCPClient:
         self.script_path = Path(script_path).resolve()
         self.server_name = server_name or self.script_path.stem
         self.env = env
-        self.call_timeout = timedelta(seconds=call_timeout_s)
+        self.call_timeout = call_timeout_s
         # Bounds initialize/list_tools; tool calls pass their own timeout.
-        self.connect_timeout = timedelta(seconds=connect_timeout_s) if connect_timeout_s else None
+        self.connect_timeout = connect_timeout_s
         self._stack: AsyncExitStack | None = None
-        self._session: ClientSession | None = None
+        self._session: Client | None = None
         # Caller-owned errlog outlives the connection (the verifier reads it after
         # a failed startup); otherwise a temp file is managed per connection.
         self._external_errlog = errlog
@@ -101,10 +122,10 @@ class DynamicMCPClient:
         if self._session is not None:
             return self.tools
         env = self.env if self.env is not None else sandbox_env()
-        args = [str(self.script_path)]
-        if "AUTOTOOL_GUARD" in env:  # run under the in-process guard (autotool/guard.py)
-            args = ["-m", "autotool.guard", *args]
-            env = {**env, "PYTHONPATH": str(Path(__file__).resolve().parents[2])}  # so -m finds autotool
+        # Every tool runs through autotool.guard: it sends tracebacks to stderr and, when the env
+        # carries AUTOTOOL_GUARD, installs the guard. PYTHONPATH lets `-m` find autotool.
+        args = ["-m", "autotool.guard", str(self.script_path)]
+        env = {**env, "PYTHONPATH": str(Path(__file__).resolve().parents[2])}
         params = StdioServerParameters(command=sys.executable, args=args, env=env, cwd=str(self.script_path.parent))
         stack = AsyncExitStack()
         try:
@@ -113,9 +134,8 @@ class DynamicMCPClient:
                 self._errlog = stack.enter_context(
                     tempfile.TemporaryFile(mode="w+", encoding="utf-8", prefix=f"{self.server_name}-", suffix=".log")
                 )
-            read, write = await stack.enter_async_context(stdio_client(params, errlog=self._errlog))
-            session = await stack.enter_async_context(ClientSession(read, write, read_timeout_seconds=self.connect_timeout))
-            await session.initialize()
+            transport = stdio_client(params, errlog=self._errlog)
+            session = await stack.enter_async_context(Client(transport, read_timeout_seconds=self.connect_timeout))
             self._stack, self._session = stack, session
             await self.refresh_tools()
         except BaseException:
@@ -131,7 +151,7 @@ class DynamicMCPClient:
                 server=self.server_name,
                 name=t.name,
                 description=t.description or "",
-                input_schema=t.inputSchema or {"type": "object", "properties": {}},
+                input_schema=t.input_schema or {"type": "object", "properties": {}},
             )
             for t in listed.tools
         ]
@@ -144,9 +164,7 @@ class DynamicMCPClient:
         return [t.to_openai() for t in self.tools]
 
     async def call_tool(self, tool_name: str, arguments: dict[str, Any] | None = None) -> CallToolResult:
-        return await self._require_session().call_tool(
-            tool_name, arguments or {}, read_timeout_seconds=self.call_timeout
-        )
+        return await self._require_session().call_tool(tool_name, arguments or {}, read_timeout_seconds=self.call_timeout)
 
     def read_stderr(self) -> str:
         if self._errlog is None or self._errlog.closed:
@@ -167,12 +185,12 @@ class DynamicMCPClient:
             except BaseException:
                 pass
 
-    def _require_session(self) -> ClientSession:
+    def _require_session(self) -> Client:
         if self._session is None:
             raise RuntimeError(f"MCP server '{self.server_name}' is not connected")
         return self._session
 
-    async def __aenter__(self) -> "DynamicMCPClient":
+    async def __aenter__(self) -> DynamicMCPClient:
         await self.connect()
         return self
 

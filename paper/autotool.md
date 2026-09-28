@@ -8,7 +8,7 @@ Agents today can use only the tools someone installed for them in advance. Every
 finding an MCP server, installing it, configuring it and pasting a key into a config file. We
 present **AutoTool**, an open-source, user-hosted MCP server that any agent connects to once and
 that then *grows*. When the agent needs a capability it does not have, it writes the tool itself:
-a small FastMCP server. It submits the code through a single `create_tool` call, and AutoTool
+a small MCP server on the official Python SDK. It submits the code through a single `create_tool` call, and AutoTool
 lints the code, runs it in a subprocess, smoke-tests it, mounts it live, announces it to the host,
 and keeps it for every agent on the machine. Tools can call authenticated APIs without the model
 ever seeing a credential. The model sees variable **names** only. Each tool declares the names it
@@ -25,9 +25,9 @@ We evaluate AutoTool in two ways:
 - **The same tasks when AutoTool writes the code.** It solved 12/12 authenticated mock tasks with
   credentials and 0/12 without them.
 
-Across all 144 runs, no secret value appeared in anything the host model saw, in any encoding.
-Every generated tool declared only credentials its task needed, and a decoy credential was never
-taken.
+Across all 162 runs, including a repeat on version 2 of the MCP Python SDK, no secret value
+appeared in anything the host model saw, in any encoding. Every generated tool declared only
+credentials its task needed, and a decoy credential was never taken.
 
 ## 1 Introduction
 
@@ -79,6 +79,11 @@ AutoTool:
 - *Elicitation* lets a server ask the user for input. Its form mode must not be used for secrets;
   its URL mode, new in the 2025-11-25 specification, exists for them.
 
+The 2026-07-28 revision removes server-initiated requests. A server that needs the user's input
+returns an *input-required* result naming what it needs, and the client retries the call with the
+answers. List changes reach clients on a `subscriptions/listen` stream. Hosts move to the new
+revision at different speeds, so a server has to speak both.
+
 **AutoTool before this work** was a standalone agent. Its own loop called an LLM, and a
 `synthesize_tool` meta-tool generated a FastMCP script, verified it in a subprocess, repaired it
 from tracebacks (up to three times) and hot-loaded it. Generated tools could reach only keyless
@@ -121,12 +126,12 @@ next time Cursor starts. The user hosts everything: there is no AutoTool service
 
 **`create_tool(name, code, test_tool?, test_arguments?)`** is the primary path. Its description
 *is* the tool contract:
-- one self-contained FastMCP script;
+- one self-contained script on the MCP Python SDK's `MCPServer`;
 - typed, documented tools that return strings;
-- `httpx` with timeouts of at most 10 s;
+- `httpx2` with timeouts of at most 10 s;
 - a `<SERVICE>_API_BASE` override for every base URL;
-- errors that raise;
-- no stdout, subprocesses, `eval`/`exec` or filesystem writes;
+- failures the caller should see raised as `ToolError`, unexpected ones left to raise (§7.9);
+- no subprocesses, `eval`/`exec` or filesystem writes;
 - credentials read with `os.environ["NAME"]` and declared in a module-level
   `REQUIRED_ENV = [...]`.
 
@@ -162,7 +167,8 @@ redacted.
    session to it. Each mounted tool gets its own **owner task**, because an MCP stdio client must
    be opened and closed in the same task (§7.1). Mounts are serialized, and replacing a tool
    unmounts the old process first.
-4. **Announce.** The server sends `tools/list_changed`.
+4. **Announce.** The server publishes the change to every `subscriptions/listen` stream and, on
+   connections that predate 2026-07-28, sends `tools/list_changed`.
 
 ## 4 Credentials
 
@@ -222,7 +228,7 @@ before reaching the host.
   because a tool can read the file they came from.
 - **How matching works:** for each secret, one case-insensitive pattern matches every
   non-alphanumeric character raw, percent-encoded (`%2B`) or backslash-escaped (`\/`), and a
-  space as `+`. This covers the realistic failure: `httpx` quotes the full request URL, key
+  space as `+`. This covers the realistic failure: `httpx2`, like `httpx` before it, quotes the full request URL, key
   included, in every HTTP error.
 - **What the model receives:** matches become `[REDACTED:NAME]`, which tells the model which
   credential was involved without disclosing it.
@@ -233,8 +239,11 @@ before reaching the host.
 ### 4.5 Consent
 
 In the default `prompt` mode, a tool that declares credentials needs the user's approval before
-any of its code runs with them, verification included. AutoTool asks through MCP form
-elicitation. It is asking a yes/no question, not for a secret, so form mode is allowed:
+any of its code runs with them, verification included. AutoTool asks with an MCP form. It is
+asking a yes/no question, not for a secret, so form mode is allowed. On a 2026-07-28 connection
+`create_tool` returns the form as an input-required result before verification starts, and the
+approval is recorded when the host retries with the answer. On an older connection AutoTool sends
+the form as an elicitation request in the middle of the call:
 
 > AutoTool: allow the tool 'tavily_tool' to use TAVILY_API_KEY? It can only send them to
 > api.tavily.com.
@@ -525,6 +534,25 @@ The adversarial side is covered by tests rather than by hoping a model misbehave
 
 The generated tools are in `paper/results/generated-tools-guard/`. Full transcripts were kept locally, redacted, and are not published, since they contain the hosts' own system context.
 
+### 6.5 On the MCP Python SDK 2
+
+The runs above used AutoTool on version 1 of the MCP Python SDK. After moving to version 2
+(`MCPServer`, `httpx2`, both protocol eras; §2, §7.9) we repeated §6.4 with the same settings and
+the same host versions: 18 runs.
+
+| Host | Passed | Declared = needed | Leaks | Guard blocks | Consent prompts |
+|---|---|---|---|---|---|
+| Claude Code | 6 / 6 | 5 / 6 | 0 | 0 | (auto) |
+| Codex CLI | 6 / 6 | 6 / 6 | 0 | 1 | (auto) |
+| custom agent | 6 / 6 | 6 / 6 | 0 | 0 | 6, one per credentialed task |
+
+The custom agent connects with the SDK's `Client`, which negotiates the 2026-07-28 revision, so
+its six approvals went through the input-required round trip rather than an elicitation request.
+The guard refused one draft of Codex's Composio tool; Codex rewrote it and passed. Claude Code
+again answered the web-search task from a keyless source instead of declaring `TAVILY_API_KEY`.
+Raw rows are in `paper/results/hosts-20260928T162549Z.*` and the tools in
+`paper/results/generated-tools-mcp2/`.
+
 ## 7 Engineering findings
 
 Integrating with real hosts surfaced problems that no unit test of the core anticipated. Each is
@@ -558,7 +586,7 @@ failed its code review (§4.3).
 
 ### 7.4 Secrets hide in schemas
 
-FastMCP publishes a parameter default in the tool's input schema, and hosts send tool schemas to
+The SDK's server class (`FastMCP` in 1.x, `MCPServer` in 2.x) publishes a parameter default in the tool's input schema, and hosts send tool schemas to
 their model on every turn. One common idiom,
 `def f(api_key: str = os.environ["KEY"])`, turns that into a leak.
 
@@ -612,6 +640,17 @@ The other five were confirmed by reading:
 All nine are fixed test-first (108 offline tests). A live re-check, with the custom agent and
 Claude Code on all six tasks, passed 12 / 12 with no leaks and no false guard blocks.
 
+### 7.9 The SDK stopped showing tracebacks to callers
+
+Version 2 of the MCP Python SDK reports an unexpected exception in a tool to the caller only as
+"Error executing tool X"; the traceback goes to the server's log, and the server no longer
+configures logging. That is the right default for a server facing a model, and it silently broke
+AutoTool's repair loop, which fixes a tool from its traceback. AutoTool now launches every tool
+through its runner (`python -m autotool.guard`), which sends logging to stderr; the verifier
+captures stderr and redacts it with everything else. The tool contract splits failures in two:
+`ToolError` for what the agent should read (an HTTP status, nothing found), and a plain raise for
+bugs, whose traceback reaches the repair loop.
+
 ## 8 Limitations and future work
 
 - **The guard is not a jail.** An audit hook sees what Python reports. Native extensions,
@@ -637,7 +676,7 @@ Claude Code on all six tasks, passed 12 / 12 with no leaks and no false guard bl
 - **Shared cache, live hosts.** Hosts share `~/.autotool/tools`. A tool replaced from one host is
   picked up by another only when that host restarts.
 - **Scale of the evaluation.** Three hosts, three model families, three trials per cell. The
-  safety results (zero leaks, per-tool least privilege) hold in every one of 144 runs. The pass
+  safety results (zero leaks, per-tool least privilege) hold in every one of 162 runs. The pass
   rates on real services have wide confidence intervals. Cursor and OpenClaw are supported through
   configuration, but we did not benchmark them: the installed OpenClaw 2026.2 predates its MCP
   command, and Cursor has no headless mode we could drive.
@@ -657,11 +696,10 @@ declared.
 
 ```bash
 python -m venv venv && venv/Scripts/pip install -e ".[dev]"      # POSIX: venv/bin
-venv/Scripts/python -m pytest -q                                   # 108 offline tests
+venv/Scripts/python -m pytest -q                                   # offline suite
 # .env: OPENAI_API_KEY, OPENAI_LLM, TAVILY_API_KEY, COMPOSIO_API_KEY
 venv/Scripts/python scripts/host_benchmark.py --trials 3 --keep-tools   # Benchmark A (needs `claude` and `codex` on PATH)
 venv/Scripts/python scripts/auth_benchmark.py --trials 3 --keep-tools   # Benchmark B
 ```
 
-Raw rows, per-task tables and every generated tool are in `paper/results/`. Design documents are
-in `docs/superpowers/specs/`.
+Raw rows, per-task tables and every generated tool are in `paper/results/`.

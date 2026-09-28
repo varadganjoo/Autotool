@@ -62,7 +62,9 @@ class SynthesisEngine:
             if report.stage == "consent":  # the user said no (or cannot be asked): never retry or re-prompt
                 raise SynthesisError(request.tool_name, attempts, report)
             reason = (report.error or "").strip().splitlines()
-            log.warning("Attempt %d for %s failed at %s: %s", attempts, request.tool_name, report.stage, reason[-1] if reason else "")
+            log.warning(
+                "Attempt %d for %s failed at %s: %s", attempts, request.tool_name, report.stage, reason[-1] if reason else ""
+            )
             if attempts > self.max_retries:
                 raise SynthesisError(request.tool_name, attempts, report)
             candidate = await self.generator.repair(request, candidate, report, attempt=attempts)

@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import httpx
+import httpx2
 import openai
 import pytest
 
@@ -17,9 +17,14 @@ from tests.test_synthesis import GOOD
 
 
 def chat_response(message: dict[str, Any]) -> dict[str, Any]:
-    return {"id": "chatcmpl-1", "object": "chat.completion", "created": 0, "model": "local-model",
-            "choices": [{"index": 0, "message": message, "finish_reason": "tool_calls" if message.get("tool_calls") else "stop"}],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
+    return {
+        "id": "chatcmpl-1",
+        "object": "chat.completion",
+        "created": 0,
+        "model": "local-model",
+        "choices": [{"index": 0, "message": message, "finish_reason": "tool_calls" if message.get("tool_calls") else "stop"}],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+    }
 
 
 def tool_call(call_id: str, name: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -32,28 +37,50 @@ class FakeCompatibleServer:
     def __init__(self) -> None:
         self.requests: list[dict[str, Any]] = []
 
-    def __call__(self, request: httpx.Request) -> httpx.Response:
+    def __call__(self, request: httpx2.Request) -> httpx2.Response:
         assert request.url.path.endswith("/chat/completions"), request.url
         body = json.loads(request.content)
         self.requests.append(body)
         if body.get("response_format", {}).get("type") == "json_schema":
-            return httpx.Response(400, json={"error": {"message": "response_format json_schema not supported"}})
+            return httpx2.Response(400, json={"error": {"message": "response_format json_schema not supported"}})
         messages = body["messages"]
         assert messages[0]["role"] == "system"
         if "tools" not in body:  # structured output, second try without response_format
             payload = {"code": GOOD, "primary_tool": "add", "smoke_test_arguments_json": '{"a": 1, "b": 2}'}
-            return httpx.Response(200, json=chat_response({"role": "assistant", "content": "```json\n" + json.dumps(payload) + "\n```"}))
+            return httpx2.Response(
+                200, json=chat_response({"role": "assistant", "content": "```json\n" + json.dumps(payload) + "\n```"})
+            )
         assert all(t["type"] == "function" and "parameters" in t["function"] for t in body["tools"])
         last = messages[-1]
         if last["role"] == "user":
-            return httpx.Response(200, json=chat_response({"role": "assistant", "content": None, "tool_calls": [
-                tool_call("c1", "create_tool", {"name": "math_tool", "code": GOOD, "test_arguments": {"a": 1, "b": 2}})]}))
+            return httpx2.Response(
+                200,
+                json=chat_response(
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            tool_call(
+                                "c1", "create_tool", {"name": "math_tool", "code": GOOD, "test_arguments": {"a": 1, "b": 2}}
+                            )
+                        ],
+                    }
+                ),
+            )
         if last["role"] == "tool" and last["tool_call_id"] == "c1":
             assert messages[-2]["tool_calls"][0]["id"] == "c1"  # the assistant turn is replayed intact
-            return httpx.Response(200, json=chat_response({"role": "assistant", "content": None, "tool_calls": [
-                tool_call("c2", "run_tool", {"name": "math_tool__add", "arguments": {"a": 20, "b": 22}})]}))
+            return httpx2.Response(
+                200,
+                json=chat_response(
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [tool_call("c2", "run_tool", {"name": "math_tool__add", "arguments": {"a": 20, "b": 22}})],
+                    }
+                ),
+            )
         if last["role"] == "tool" and last["tool_call_id"] == "c2":
-            return httpx.Response(200, json=chat_response({"role": "assistant", "content": f"The answer is {last['content']}."}))
+            return httpx2.Response(200, json=chat_response({"role": "assistant", "content": f"The answer is {last['content']}."}))
         raise AssertionError(f"unexpected request: {messages}")
 
 
@@ -64,8 +91,11 @@ def fake() -> FakeCompatibleServer:
 
 @pytest.fixture
 def provider(fake: FakeCompatibleServer) -> OpenAICompatibleProvider:
-    client = openai.AsyncOpenAI(api_key="not-needed", base_url="http://localhost:11434/v1",
-                                http_client=httpx.AsyncClient(transport=httpx.MockTransport(fake)))
+    client = openai.AsyncOpenAI(
+        api_key="not-needed",
+        base_url="http://localhost:11434/v1",
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(fake)),
+    )
     return OpenAICompatibleProvider("local-model", client=client)
 
 
@@ -77,7 +107,7 @@ async def test_run_agent_on_an_openai_compatible_endpoint(provider, fake, tmp_pa
 
 async def test_structured_output_falls_back_when_json_schema_is_unsupported(provider, fake):
     candidate = await provider.structured(system="Write a tool.", prompt="add ints", output_model=GeneratedToolCandidate)
-    assert candidate.primary_tool == "add" and "FastMCP" in candidate.code
+    assert candidate.primary_tool == "add" and "MCPServer" in candidate.code
     assert [r.get("response_format", {}).get("type") for r in fake.requests] == ["json_schema", None]
 
 

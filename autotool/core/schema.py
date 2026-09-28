@@ -99,9 +99,9 @@ class CapabilityRequest(BaseModel):
 
 
 class GeneratedToolCandidate(BaseModel):
-    """Structured output the LLM returns when writing a FastMCP server."""
+    """Structured output the LLM returns when writing an MCP tool server (MCPServer)."""
 
-    code: str = Field(description="Complete, self-contained Python source of the FastMCP server script.")
+    code: str = Field(description="Complete, self-contained Python source of the MCPServer tool script.")
     primary_tool: str = Field(description="Name of the most important @mcp.tool() function, used for the smoke test.")
     smoke_test_arguments_json: str = Field(
         description="JSON object of safe, realistic arguments for calling primary_tool in a smoke test, e.g. '{\"limit\": 3}'."

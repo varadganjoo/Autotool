@@ -23,12 +23,13 @@ import shutil
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
-import httpx
+import httpx2
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -42,7 +43,7 @@ from autotool.main import run_objective  # noqa: E402
 
 
 def _get(url: str) -> Any:
-    r = httpx.get(url, timeout=15, follow_redirects=True, headers={"User-Agent": "autotool-benchmark"})
+    r = httpx2.get(url, timeout=15, follow_redirects=True, headers={"User-Agent": "autotool-benchmark"})
     r.raise_for_status()
     return r.json()
 
@@ -67,8 +68,8 @@ def grade_hackernews(answer: str) -> tuple[bool, str]:
 
 
 def grade_pypi(answer: str) -> tuple[bool, str]:
-    version = _get("https://pypi.org/pypi/httpx/json")["info"]["version"]
-    return version in answer, f"expected httpx {version}"
+    version = _get("https://pypi.org/pypi/httpx2/json")["info"]["version"]
+    return version in answer, f"expected httpx2 {version}"
 
 
 def grade_npm(answer: str) -> tuple[bool, str]:
@@ -106,26 +107,42 @@ class Task:
 
 
 TASKS = [
-    Task("hackernews", "Fetch the current top 3 stories from Hacker News using their public API and return the titles and URLs.",
-         ["hacker-news.firebaseio.com"], grade_hackernews),
-    Task("pypi", "What is the latest released version of the Python package 'httpx' on PyPI right now?",
-         ["pypi.org"], grade_pypi),
-    Task("npm", "What is the latest published version of the 'react' package on the npm registry?",
-         ["registry.npmjs.org"], grade_npm),
-    Task("countries", "Using the REST Countries API, what is the capital of Japan and its population?",
-         ["restcountries.com"], grade_countries),
-    Task("github", "How many GitHub stars does the python/cpython repository have right now?",
-         ["api.github.com"], grade_github),
-    Task("weather", "What is the current air temperature in Berlin (lat 52.52, lon 13.41) according to Open-Meteo?",
-         ["api.open-meteo.com"], grade_weather),
+    Task(
+        "hackernews",
+        "Fetch the current top 3 stories from Hacker News using their public API and return the titles and URLs.",
+        ["hacker-news.firebaseio.com"],
+        grade_hackernews,
+    ),
+    Task(
+        "pypi", "What is the latest released version of the Python package 'httpx2' on PyPI right now?", ["pypi.org"], grade_pypi
+    ),
+    Task(
+        "npm",
+        "What is the latest published version of the 'react' package on the npm registry?",
+        ["registry.npmjs.org"],
+        grade_npm,
+    ),
+    Task(
+        "countries",
+        "Using the REST Countries API, what is the capital of Japan and its population?",
+        ["restcountries.com"],
+        grade_countries,
+    ),
+    Task("github", "How many GitHub stars does the python/cpython repository have right now?", ["api.github.com"], grade_github),
+    Task(
+        "weather",
+        "What is the current air temperature in Berlin (lat 52.52, lon 13.41) according to Open-Meteo?",
+        ["api.open-meteo.com"],
+        grade_weather,
+    ),
 ]
 
 
 def reachable(host: str) -> bool:
     try:
-        httpx.get(f"https://{host}/", timeout=8)
+        httpx2.get(f"https://{host}/", timeout=8)
         return True
-    except Exception:  # noqa: BLE001
+    except Exception:
         return False
 
 
@@ -160,7 +177,7 @@ async def run_condition(task: Task, condition: str, tools_dir: Path, args: argpa
         )
         passed, note = task.grade(answer)
         row.update(answer=answer, passed=passed, grade_note=note, error=None)
-    except Exception as exc:  # noqa: BLE001 - record and continue the benchmark
+    except Exception as exc:
         row.update(answer=None, passed=False, grade_note=None, error=f"{type(exc).__name__}: {exc}"[:800])
     row.update(
         wall_s=round(time.monotonic() - started, 2),
@@ -174,7 +191,7 @@ async def run_condition(task: Task, condition: str, tools_dir: Path, args: argpa
 def summarize(rows: list[dict[str, Any]]) -> str:
     def mean(xs: list[float]) -> str:
         xs = [x for x in xs if x is not None]
-        return f"{sum(xs) / len(xs):.1f}" if xs else "–"
+        return f"{sum(xs) / len(xs):.1f}" if xs else "-"
 
     lines = [
         "| task | condition | pass | mean wall s | mean LLM calls | mean tokens (in/out) | mean synth attempts |",
@@ -205,7 +222,7 @@ async def main() -> int:
 
     tasks = [t for t in TASKS if t.key in args.tasks]
     probe = default_provider(args.provider, args.model)
-    llm_host = httpx.URL(str(probe.client.base_url)).host
+    llm_host = httpx2.URL(str(probe.client.base_url)).host
     if not reachable(llm_host):
         print(f"LLM endpoint {llm_host} is unreachable from this environment; aborting.", file=sys.stderr)
         return 2
@@ -213,7 +230,7 @@ async def main() -> int:
     rows: list[dict[str, Any]] = []
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
     for task in tasks:
         blocked = [h for h in task.hosts if not reachable(h)]
@@ -228,9 +245,12 @@ async def main() -> int:
                     row["trial"] = trial
                     rows.append(row)
                     status = "PASS" if row["passed"] else "FAIL"
-                    print(f"[{task.key} #{trial} {cond}] {status} {row['wall_s']}s "
-                          f"calls={row['llm_calls']} attempts={row.get('synthesis_attempts')} "
-                          f"{row.get('error') or row.get('grade_note')}", file=sys.stderr)
+                    print(
+                        f"[{task.key} #{trial} {cond}] {status} {row['wall_s']}s "
+                        f"calls={row['llm_calls']} attempts={row.get('synthesis_attempts')} "
+                        f"{row.get('error') or row.get('grade_note')}",
+                        file=sys.stderr,
+                    )
                 if args.keep_tools:
                     shutil.copytree(tools_dir, out / f"tools-{stamp}" / f"{task.key}-{trial}", dirs_exist_ok=True)
             finally:

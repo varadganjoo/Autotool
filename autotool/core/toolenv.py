@@ -9,14 +9,14 @@ from __future__ import annotations
 import ast
 import json
 import re
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from dotenv import dotenv_values, find_dotenv
 
-from autotool.core.policy import code_hash
-
 from autotool.clients.dynamic_client import sandbox_env
+from autotool.core.policy import code_hash
 
 # Variables the runtime itself uses (LLM credentials, model ids, settings) are never offered to tools.
 RESERVED_PREFIXES = ("OPENAI_", "ANTHROPIC_", "AUTOTOOL_")
@@ -59,7 +59,7 @@ def runtime_dotenv_names() -> list[str]:
 
 
 def _is_secret(name: str, value: str) -> bool:
-    # ponytail: heuristic. Values under 8 chars are never redacted so `AUTH_MODE=on` can't
+    # A heuristic. Values under 8 chars are never redacted so `AUTH_MODE=on` can't
     # mangle output; odd-named secrets are caught by shape (long, no spaces, not a URL).
     if len(value) < 8:
         return False
@@ -106,9 +106,7 @@ class ToolEnv:
         # from a tool's inherited environment: the runtime load_dotenv()s them into os.environ.
         self._drop = set(values) | set(also_drop)
         self._values: dict[str, str] = {
-            k: v
-            for k, v in values.items()
-            if v and _ENV_NAME_RE.match(k) and not k.upper().startswith(RESERVED_PREFIXES)
+            k: v for k, v in values.items() if v and _ENV_NAME_RE.match(k) and not k.upper().startswith(RESERVED_PREFIXES)
         }
         # Reserved values (the runtime's model keys) are never granted, but still redacted: a tool can
         # read the file they came from. Longest first, so a value containing another is replaced whole.
@@ -117,7 +115,7 @@ class ToolEnv:
         self._secrets = [(_secret_pattern(v), k) for k, v in ordered]
 
     @classmethod
-    def from_dotenv(cls, path: str | Path | None = None) -> "ToolEnv":
+    def from_dotenv(cls, path: str | Path | None = None) -> ToolEnv:
         """Explicit ``path`` must exist; otherwise the nearest ``.env`` from the cwd, if any."""
         runtime_names = runtime_dotenv_names()
         protect = [p for p in (runtime_dotenv_path(),) if p]

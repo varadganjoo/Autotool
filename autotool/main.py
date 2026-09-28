@@ -25,7 +25,10 @@ def print_event(event: RunEvent) -> None:
         print(f"  -> {d['name']}({d['arguments']})", file=sys.stderr)
     elif event.kind == "synthesis":
         status = "OK" if d.get("ok") else "FAILED"
-        print(f"  [synthesis {status}] {d.get('tool_name')} attempts={d.get('attempts')} {d.get('path', d.get('error', ''))}", file=sys.stderr)
+        print(
+            f"  [synthesis {status}] {d.get('tool_name')} attempts={d.get('attempts')} {d.get('path', d.get('error', ''))}",
+            file=sys.stderr,
+        )
     elif event.kind == "tool_result":
         flag = "error" if d["is_error"] else "ok"
         preview = d["content"].replace("\n", " ")[:160]

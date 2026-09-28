@@ -35,8 +35,14 @@ def claude_desktop_config() -> Path:
 def host_config_paths() -> list[Path]:
     """Every host config that may hold AutoTool's entry (and its AUTOTOOL_KEY_* values)."""
     home = Path.home()
-    return [home / ".claude.json", home / ".codex" / "config.toml", home / ".cursor" / "mcp.json",
-            claude_desktop_config(), home / ".openclaw" / "openclaw.json", home / ".openclaw" / "config.json"]
+    return [
+        home / ".claude.json",
+        home / ".codex" / "config.toml",
+        home / ".cursor" / "mcp.json",
+        claude_desktop_config(),
+        home / ".openclaw" / "openclaw.json",
+        home / ".openclaw" / "config.json",
+    ]
 
 
 def add_to_json_config(path: Path, cmd: list[str], dry_run: bool) -> str:
@@ -93,7 +99,7 @@ def _codex(exe: str, cmd: list[str], dry_run: bool) -> str:
 
 def _openclaw(exe: str, cmd: list[str], dry_run: bool) -> str:
     snippet = json.dumps({"mcp": {"servers": {NAME: {"command": cmd[0], "args": cmd[1:]}}}})
-    # ponytail: OpenClaw's MCP CLI changed across releases; only drive it when `mcp set` takes --command.
+    # OpenClaw's MCP CLI changed across releases; only drive it when `mcp set` takes --command.
     probe = _run([exe, "mcp", "set", "--help"])
     if probe.returncode != 0 or "--command" not in probe.stdout:
         return f"this OpenClaw has no `mcp set --command`; upgrade it, or add to its config: {snippet}"
@@ -133,7 +139,9 @@ def run_setup(hosts: list[str] | None = None, dry_run: bool = False, launcher: s
     print(f"Server command: {' '.join(cmd)}")
     for host, status in results:
         print(f"  {host:15} {status}")
-    print(f"\nAdd credentials with `autotool keys add NAME` or in {autotool_home() / '.env'}; "
-          "your agent sees their names, never their values.\n"
-          f"Your own agent: connect any MCP client to `{' '.join(cmd)}` over stdio.")
+    print(
+        f"\nAdd credentials with `autotool keys add NAME` or in {autotool_home() / '.env'}; "
+        "your agent sees their names, never their values.\n"
+        f"Your own agent: connect any MCP client to `{' '.join(cmd)}` over stdio."
+    )
     return 0

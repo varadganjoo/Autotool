@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Awaitable, Callable, Protocol, TypeVar
+from collections.abc import Awaitable, Callable
+from typing import Any, Protocol, TypeVar
 
 from pydantic import BaseModel
 
@@ -20,7 +21,7 @@ from autotool.core.schema import LLMTurn, ToolCall, ToolResult
 T = TypeVar("T", bound=BaseModel)
 
 DEFAULT_MODEL = "claude-opus-5"
-DEFAULT_OPENAI_MODEL = "gpt-5"
+DEFAULT_OPENAI_MODEL = "gpt-6-sol"  # OpenAI's tier for coding and agentic work; gpt-6-astra is the premium one
 # Server-side refusal fallbacks: on a policy decline the API re-runs the
 # request on a fallback model inside the same call.
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
@@ -109,11 +110,7 @@ class AnthropicProvider(_AnthropicFormatMixin):
         if response.stop_reason == "refusal":
             raise LLMRefusalError(f"Model declined the request: {response.stop_details}")
         text = "".join(b.text for b in response.content if b.type == "text")
-        calls = [
-            ToolCall(id=b.id, name=b.name, arguments=dict(b.input or {}))
-            for b in response.content
-            if b.type == "tool_use"
-        ]
+        calls = [ToolCall(id=b.id, name=b.name, arguments=dict(b.input or {})) for b in response.content if b.type == "tool_use"]
         if response.stop_reason == "max_tokens" and calls:
             raise RuntimeError("Response hit max_tokens mid tool call; tool input may be truncated")
         return LLMTurn(text=text, tool_calls=calls, stop_reason=response.stop_reason, raw_content=response.content)
@@ -141,9 +138,7 @@ class OpenAIProvider:
     def __init__(self, model: str | None = None, *, client: Any = None, reasoning_effort: str | None = None) -> None:
         import openai
 
-        self.model = (
-            model or os.environ.get("AUTOTOOL_OPENAI_MODEL") or os.environ.get("OPENAI_LLM") or DEFAULT_OPENAI_MODEL
-        )
+        self.model = model or os.environ.get("AUTOTOOL_OPENAI_MODEL") or os.environ.get("OPENAI_LLM") or DEFAULT_OPENAI_MODEL
         self.reasoning_effort = reasoning_effort
         self.client = client or openai.AsyncOpenAI()
         self.usage = UsageStats()
@@ -163,19 +158,23 @@ class OpenAIProvider:
         for t in tools:
             if "function" in t:
                 f = t["function"]
-                res_tools.append({
-                    "type": "function",
-                    "name": f["name"],
-                    "description": f.get("description", ""),
-                    "parameters": f.get("parameters", {}),
-                })
+                res_tools.append(
+                    {
+                        "type": "function",
+                        "name": f["name"],
+                        "description": f.get("description", ""),
+                        "parameters": f.get("parameters", {}),
+                    }
+                )
             else:
-                res_tools.append({
-                    "type": "function",
-                    "name": t["name"],
-                    "description": t.get("description", ""),
-                    "parameters": t.get("input_schema") or t.get("parameters") or {},
-                })
+                res_tools.append(
+                    {
+                        "type": "function",
+                        "name": t["name"],
+                        "description": t.get("description", ""),
+                        "parameters": t.get("input_schema") or t.get("parameters") or {},
+                    }
+                )
         return res_tools
 
     async def complete(self, *, system: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> LLMTurn:
@@ -214,7 +213,11 @@ class OpenAIProvider:
                     if part_type == "output_text":
                         text_chunks.append(getattr(part, "text", "") or (part.get("text", "") if isinstance(part, dict) else ""))
             elif item_type == "function_call":
-                call_id = getattr(item, "call_id", None) or (item.get("call_id") if isinstance(item, dict) else None) or getattr(item, "id", "")
+                call_id = (
+                    getattr(item, "call_id", None)
+                    or (item.get("call_id") if isinstance(item, dict) else None)
+                    or getattr(item, "id", "")
+                )
                 name = getattr(item, "name", "") or (item.get("name", "") if isinstance(item, dict) else "")
                 args_raw = getattr(item, "arguments", "{}") or (item.get("arguments", "{}") if isinstance(item, dict) else "{}")
                 if isinstance(args_raw, dict):
@@ -286,13 +289,17 @@ class OpenAICompatibleProvider:
     base_url / api_key / model default to OPENAI_BASE_URL / OPENAI_API_KEY / OPENAI_LLM; local
     servers usually need no key."""
 
-    def __init__(self, model: str | None = None, *, base_url: str | None = None, api_key: str | None = None, client: Any = None) -> None:
+    def __init__(
+        self, model: str | None = None, *, base_url: str | None = None, api_key: str | None = None, client: Any = None
+    ) -> None:
         import openai
 
         self.model = model or os.environ.get("AUTOTOOL_OPENAI_MODEL") or os.environ.get("OPENAI_LLM")
         if not self.model:
-            raise ValueError("Name the model to use on your OpenAI-compatible endpoint: set OPENAI_LLM "
-                             "(e.g. OPENAI_LLM=qwen2.5:14b for Ollama) or pass model=...")
+            raise ValueError(
+                "Name the model to use on your OpenAI-compatible endpoint: set OPENAI_LLM "
+                "(e.g. OPENAI_LLM=qwen2.5:14b for Ollama) or pass model=..."
+            )
         self.client = client or openai.AsyncOpenAI(
             base_url=base_url or os.environ.get("OPENAI_BASE_URL"),
             api_key=api_key or os.environ.get("OPENAI_API_KEY") or "not-needed",  # local servers ignore it
@@ -307,8 +314,14 @@ class OpenAICompatibleProvider:
         kwargs: dict[str, Any] = {"model": self.model, "messages": [{"role": "system", "content": system}, *messages]}
         if tools:
             kwargs["tools"] = [
-                {"type": "function", "function": {"name": t["name"], "description": t.get("description", ""),
-                                                  "parameters": t.get("input_schema") or {"type": "object", "properties": {}}}}
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t["name"],
+                        "description": t.get("description", ""),
+                        "parameters": t.get("input_schema") or {"type": "object", "properties": {}},
+                    },
+                }
                 for t in tools
             ]
         response = await self.client.chat.completions.create(**kwargs)
@@ -324,21 +337,31 @@ class OpenAICompatibleProvider:
                 args = {"__invalid_json__": c.function.arguments}
             calls.append(ToolCall(id=call_id, name=c.function.name, arguments=args if isinstance(args, dict) else {}))
             raw.setdefault("tool_calls", []).append(
-                {"id": call_id, "type": "function", "function": {"name": c.function.name, "arguments": c.function.arguments or "{}"}}
+                {
+                    "id": call_id,
+                    "type": "function",
+                    "function": {"name": c.function.name, "arguments": c.function.arguments or "{}"},
+                }
             )
-        return LLMTurn(text=message.content or "", tool_calls=calls, stop_reason=response.choices[0].finish_reason, raw_content=raw)
+        return LLMTurn(
+            text=message.content or "", tool_calls=calls, stop_reason=response.choices[0].finish_reason, raw_content=raw
+        )
 
     async def structured(self, *, system: str, prompt: str, output_model: type[T]) -> T:
         import openai
 
         schema = output_model.model_json_schema()
         messages = [
-            {"role": "system", "content": f"{system}\n\nReply with only a JSON object matching this JSON schema:\n{json.dumps(schema)}"},
+            {
+                "role": "system",
+                "content": f"{system}\n\nReply with only a JSON object matching this JSON schema:\n{json.dumps(schema)}",
+            },
             {"role": "user", "content": prompt},
         ]
         try:
             response = await self.client.chat.completions.create(
-                model=self.model, messages=messages,
+                model=self.model,
+                messages=messages,
                 response_format={"type": "json_schema", "json_schema": {"name": output_model.__name__, "schema": schema}},
             )
         except openai.BadRequestError:  # servers without JSON-schema output: the schema is in the prompt
@@ -350,17 +373,27 @@ class OpenAICompatibleProvider:
         return turn.raw_content
 
     def tool_results_messages(self, results: list[ToolResult]) -> list[dict[str, Any]]:
-        return [{"role": "tool", "tool_call_id": r.call_id, "content": f"ERROR: {r.content}" if r.is_error else r.content}
-                for r in results]
+        return [
+            {"role": "tool", "tool_call_id": r.call_id, "content": f"ERROR: {r.content}" if r.is_error else r.content}
+            for r in results
+        ]
 
 
 def default_provider(name: str | None = None, model: str | None = None, **kwargs: Any) -> LLMProvider:
     """``name`` is 'openai', 'openai-compatible' or 'anthropic' (or $AUTOTOOL_PROVIDER). When omitted:
     an OpenAI-compatible endpoint if OPENAI_BASE_URL is set (Ollama, LM Studio, vLLM, OpenRouter...),
     else OpenAI if OPENAI_API_KEY is set, else Anthropic."""
-    name = (name or os.environ.get("AUTOTOOL_PROVIDER") or (
-        "openai-compatible" if os.environ.get("OPENAI_BASE_URL") else "openai" if os.environ.get("OPENAI_API_KEY") else "anthropic"
-    )).lower()
+    name = (
+        name
+        or os.environ.get("AUTOTOOL_PROVIDER")
+        or (
+            "openai-compatible"
+            if os.environ.get("OPENAI_BASE_URL")
+            else "openai"
+            if os.environ.get("OPENAI_API_KEY")
+            else "anthropic"
+        )
+    ).lower()
     if name == "openai-compatible":
         return OpenAICompatibleProvider(model)
     if name == "openai":

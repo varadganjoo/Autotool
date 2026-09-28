@@ -49,7 +49,7 @@ class ToolRegistry:
             try:
                 await self.mount(path)
                 mounted.append(path.stem)
-            except Exception as exc:  # noqa: BLE001 - keep booting with the rest
+            except Exception as exc:
                 log.warning("Skipping cached tool %s: %s", path.name, exc)
 
         async with anyio.create_task_group() as tg:
@@ -144,14 +144,14 @@ class ToolRegistry:
         client = self._clients[server]
         try:
             result = await client.call_tool(tool, arguments)
-        except Exception as exc:  # noqa: BLE001 - surface to the LLM, keep running
+        except Exception as exc:
             return ToolResult(
                 call_id=call_id, content=self.tool_env.redact(f"Tool call failed: {type(exc).__name__}: {exc}"), is_error=True
             )
         content = self.tool_env.redact(render_call_result(result) or "(empty result)")
-        return ToolResult(call_id=call_id, content=content, is_error=result.isError)
+        return ToolResult(call_id=call_id, content=content, is_error=bool(result.is_error))
 
-    async def __aenter__(self) -> "ToolRegistry":
+    async def __aenter__(self) -> ToolRegistry:
         self._tg = anyio.create_task_group()
         await self._tg.__aenter__()
         return self

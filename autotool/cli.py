@@ -31,8 +31,11 @@ def _keys(args: argparse.Namespace) -> int:
     home = autotool_home()
     if args.action == "add":
         if args.name.upper().startswith(RESERVED_PREFIXES):
-            print(f"{args.name} is reserved: names starting with {', '.join(RESERVED_PREFIXES)} configure AutoTool itself "
-                  "and are never given to tools. Store it under another name (e.g. MY_OPENAI_API_KEY).", file=sys.stderr)
+            print(
+                f"{args.name} is reserved: names starting with {', '.join(RESERVED_PREFIXES)} configure AutoTool itself "
+                "and are never given to tools. Store it under another name (e.g. MY_OPENAI_API_KEY).",
+                file=sys.stderr,
+            )
             return 1
         value = sys.stdin.readline().rstrip("\r\n") if args.stdin else getpass.getpass(f"Value for {args.name} (hidden): ")
         if not value:
@@ -44,8 +47,10 @@ def _keys(args: argparse.Namespace) -> int:
             print(exc, file=sys.stderr)
             return 1
         except keyring.errors.KeyringError as exc:
-            print(f"No OS keychain is available here ({exc}). Put the key in {home / '.env'} instead:\n"
-                  f"  {args.name}=...", file=sys.stderr)
+            print(
+                f"No OS keychain is available here ({exc}). Put the key in {home / '.env'} instead:\n  {args.name}=...",
+                file=sys.stderr,
+            )
             return 1
         print(f"Stored {args.name} in the OS keychain. Tools that declare it can use it; the model only sees the name.")
     elif args.action == "allow":
@@ -124,22 +129,40 @@ def main(argv: list[str] | None = None) -> int:
     serve = sub.add_parser("serve", help="Run the MCP server (what your agent host launches).")
     serve.add_argument("--env-file", default=None, help="Extra dotenv file with tool credentials.")
     serve.add_argument("--log-level", default="WARNING")
-    serve.add_argument("--consent", default=os.environ.get("AUTOTOOL_CONSENT", "prompt"),
-                       help="'prompt' (default): ask before a tool first gets credentials. 'dangerously-allow-all': "
-                       "never ask. Same as --dangerously-allow-all-tools.")
-    serve.add_argument("--dangerously-allow-all-tools", action="store_true",
-                       help="Skip approvals: every tool gets the credentials it declares without asking you. The guard "
-                       "and host allowlists still apply.")
-    serve.add_argument("--sandbox", default=os.environ.get("AUTOTOOL_SANDBOX", "on"),
-                       help="Run tools under AutoTool's guard (default). Turn off if AutoTool already runs in a sandbox; "
-                       "host allowlists are then not enforced.")
+    serve.add_argument(
+        "--consent",
+        default=os.environ.get("AUTOTOOL_CONSENT", "prompt"),
+        help="'prompt' (default): ask before a tool first gets credentials. 'dangerously-allow-all': "
+        "never ask. Same as --dangerously-allow-all-tools.",
+    )
+    serve.add_argument(
+        "--dangerously-allow-all-tools",
+        action="store_true",
+        help="Skip approvals: every tool gets the credentials it declares without asking you. The guard "
+        "and host allowlists still apply.",
+    )
+    serve.add_argument(
+        "--sandbox",
+        default=os.environ.get("AUTOTOOL_SANDBOX", "on"),
+        help="Run tools under AutoTool's guard (default). Turn off if AutoTool already runs in a sandbox; "
+        "host allowlists are then not enforced.",
+    )
 
     setup = sub.add_parser("setup", help="Connect AutoTool to Claude Code, Codex, Claude Desktop, Cursor and OpenClaw.")
-    setup.add_argument("--hosts", nargs="*", default=None, choices=["claude-code", "codex", "claude-desktop", "cursor", "openclaw"],
-                       help="Limit to these hosts (default: every one detected).")
+    setup.add_argument(
+        "--hosts",
+        nargs="*",
+        default=None,
+        choices=["claude-code", "codex", "claude-desktop", "cursor", "openclaw"],
+        help="Limit to these hosts (default: every one detected).",
+    )
     setup.add_argument("--dry-run", action="store_true", help="Show what would change without changing anything.")
-    setup.add_argument("--launcher", choices=["auto", "uvx", "python"], default="auto",
-                       help="How hosts start the server: installed `autotool` script, `uvx autotool-mcp`, or this Python.")
+    setup.add_argument(
+        "--launcher",
+        choices=["auto", "uvx", "python"],
+        default="auto",
+        help="How hosts start the server: installed `autotool` script, `uvx autotool-mcp`, or this Python.",
+    )
 
     keys = sub.add_parser("keys", help="Manage credentials (OS keychain) and their host allowlists.")
     keys_sub = keys.add_subparsers(dest="action", required=True)
@@ -164,8 +187,11 @@ def main(argv: list[str] | None = None) -> int:
     trv = tools_sub.add_parser("revoke", help="Withdraw a tool's approval.")
     trv.add_argument("name")
 
-    sub.add_parser("run", help='Demo agent: autotool run "objective". Needs autotool-mcp[models] and a key in ./.env; '
-                   "it has no consent prompts or allowlists and uses ./tools.")
+    sub.add_parser(
+        "run",
+        help='Demo agent: autotool run "objective". Needs autotool-mcp[models] and a key in ./.env; '
+        "it has no consent prompts or allowlists and uses ./tools.",
+    )
 
     args = parser.parse_args(argv)
     if args.command == "serve":

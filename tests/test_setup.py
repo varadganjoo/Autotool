@@ -51,7 +51,9 @@ def test_claude_code_uses_its_cli_and_dry_run_changes_nothing(tmp_path, monkeypa
 
 def test_rerunning_setup_keeps_credentials_in_the_entry(tmp_path):
     cfg = tmp_path / "mcp.json"
-    cfg.write_text(json.dumps({"mcpServers": {"autotool": {"command": "old", "args": ["serve"], "env": {"AUTOTOOL_KEY_X": "v"}}}}))
+    cfg.write_text(
+        json.dumps({"mcpServers": {"autotool": {"command": "old", "args": ["serve"], "env": {"AUTOTOOL_KEY_X": "v"}}}})
+    )
     setup.add_to_json_config(cfg, ["autotool", "serve"], dry_run=False)
     entry = json.loads(cfg.read_text())["mcpServers"]["autotool"]
     assert entry == {"command": "autotool", "args": ["serve"], "env": {"AUTOTOOL_KEY_X": "v"}}

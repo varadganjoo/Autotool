@@ -1,4 +1,4 @@
-"""LLM prompt pipeline that writes standalone FastMCP server scripts."""
+"""LLM prompt pipeline that writes standalone MCP tool server scripts (MCPServer)."""
 
 from __future__ import annotations
 
@@ -8,15 +8,15 @@ from autotool.core.llm import LLMProvider
 from autotool.core.schema import CapabilityRequest, GeneratedToolCandidate, VerificationReport
 
 TOOL_CONTRACT = """- It is one self-contained file that runs as `python <file>.py` and serves MCP over stdio.
-- It uses `from mcp.server.fastmcp import FastMCP` and creates `mcp = FastMCP("<tool_name>")`.
+- It uses `from mcp.server.mcpserver import MCPServer` and creates `mcp = MCPServer("<tool_name>")`.
 - Every tool is a function decorated with `@mcp.tool()` with full type annotations and a docstring
   that explains what it does and each parameter. Prefer simple parameter types (str, int, float, bool)
   with sensible defaults. Return a `str` (plain text or `json.dumps(...)` of the result).
 - The file ends with:
       if __name__ == "__main__":
           mcp.run()
-- Only import the standard library, `httpx`, `pydantic` and `mcp`.
-- Use `httpx` with an explicit timeout of at most 10 seconds for network calls. Use public APIs, or
+- Only import the standard library, `httpx2`, `pydantic` and `mcp`.
+- Use `httpx2` with an explicit timeout of at most 10 seconds for network calls. Use public APIs, or
   APIs whose credentials the prompt lists as available environment variables. Never hard-code
   credentials.
 - Credentials: read each one with `os.environ["NAME"]` and declare every name you read at module
@@ -24,9 +24,10 @@ TOOL_CONTRACT = """- It is one self-contained file that runs as `python <file>.p
   in headers when the API allows it; never return, log or put key values in error messages.
 - Make every external API base URL overridable through an environment variable named
   `<SERVICE>_API_BASE` (e.g. `HN_API_BASE`), defaulting to the real public URL.
-- Let errors raise (e.g. `response.raise_for_status()`); FastMCP turns exceptions into tool errors,
-  which is how the verification harness detects broken tools. Do not swallow exceptions.
-- NEVER write to stdout (no bare `print`): stdout carries the MCP protocol. Log to stderr if needed.
+- Report failures the caller should see (an HTTP error status, nothing found) by raising
+  `ToolError("...")` from `mcp.server.mcpserver.exceptions`, with a clear message that names the
+  service and status. Let unexpected errors raise: they fail the call, and the traceback reaches the
+  verification harness. Never return an error as a normal string, and never swallow exceptions.
 - No subprocesses, no filesystem writes, no `eval`/`exec`.
 - Keep the tool fast: bound fan-out (e.g. concurrent requests for at most ~30 items)."""
 
@@ -39,10 +40,12 @@ Also choose the primary tool and safe, realistic smoke-test arguments that exerc
 (e.g. a small limit)."""
 
 TEMPLATE = '''import os
-import httpx
-from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP("example_tool")
+import httpx2
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
+
+mcp = MCPServer("example_tool")
 API_BASE = os.environ.get("EXAMPLE_API_BASE", "https://api.example.com")
 
 
@@ -54,10 +57,11 @@ def get_thing(thing_id: int, verbose: bool = False) -> str:
         thing_id: Numeric id of the thing.
         verbose: Include extra fields.
     """
-    with httpx.Client(timeout=10) as client:
+    with httpx2.Client(timeout=10) as client:
         resp = client.get(f"{API_BASE}/things/{thing_id}")
-        resp.raise_for_status()
-        return resp.text
+    if resp.status_code != 200:
+        raise ToolError(f"Example API returned HTTP {resp.status_code} for thing {thing_id}")
+    return resp.text
 
 
 if __name__ == "__main__":
@@ -80,8 +84,8 @@ def env_section(env_names: list[str]) -> str:
         return "No credentials are available: only use public, keyless APIs and do not declare REQUIRED_ENV."
     return (
         "Environment variables available to this tool (values are injected at runtime; you never see them): "
-        f"{', '.join(env_names)}.\nIf the API needs one of them, read it with os.environ[\"NAME\"] and "
-        "declare it, e.g. REQUIRED_ENV = [\"NAME\"]. Declare only the ones this tool actually uses."
+        f'{", ".join(env_names)}.\nIf the API needs one of them, read it with os.environ["NAME"] and '
+        'declare it, e.g. REQUIRED_ENV = ["NAME"]. Declare only the ones this tool actually uses.'
     )
 
 
@@ -95,12 +99,14 @@ class ToolGenerator:
 
     async def generate(self, request: CapabilityRequest) -> GeneratedToolCandidate:
         prompt = (
-            f"Write the MCP server `{request.tool_name}` (use exactly `FastMCP(\"{request.tool_name}\")`).\n\n"
+            f'Write the MCP server `{request.tool_name}` (use exactly `MCPServer("{request.tool_name}")`).\n\n'
             f"Capability it must provide:\n{request.capability_description}\n\n"
             f"{self._env_section()}\n\n"
             f"Structural reference (adapt, do not copy the example API):\n```python\n{TEMPLATE}```"
         )
-        return self._finalize(await self.provider.structured(system=GENERATOR_SYSTEM, prompt=prompt, output_model=GeneratedToolCandidate))
+        return self._finalize(
+            await self.provider.structured(system=GENERATOR_SYSTEM, prompt=prompt, output_model=GeneratedToolCandidate)
+        )
 
     async def repair(
         self,
@@ -120,7 +126,9 @@ class ToolGenerator:
             "Diagnose the root cause from the traceback / stderr and return a corrected, complete script. "
             "Keep the same contract. If the smoke-test arguments were the problem, fix them too."
         )
-        return self._finalize(await self.provider.structured(system=GENERATOR_SYSTEM, prompt=prompt, output_model=GeneratedToolCandidate))
+        return self._finalize(
+            await self.provider.structured(system=GENERATOR_SYSTEM, prompt=prompt, output_model=GeneratedToolCandidate)
+        )
 
     @staticmethod
     def _finalize(candidate: GeneratedToolCandidate) -> GeneratedToolCandidate:

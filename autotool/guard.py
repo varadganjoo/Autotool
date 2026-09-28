@@ -1,4 +1,4 @@
-"""Run a tool script under AutoTool's in-process guard.
+"""Run a tool script, under AutoTool's in-process guard when it is configured.
 
     python -m autotool.guard path/to/tool.py
 
@@ -19,6 +19,7 @@ from __future__ import annotations
 import fnmatch
 import ipaddress
 import json
+import logging
 import os
 import re
 import runpy
@@ -43,9 +44,17 @@ _BLOCKED_IMPORTS = {"keyring", "win32cred", "win32ctypes", "cffi", "_cffi_backen
 # directory. dir_fd matters on Linux/macOS, where shutil.rmtree works relative to open directories.
 # (os.symlink's first argument is the link's *target*; reads through links are caught by realpath.)
 _FILE_CHANGES = {
-    "os.remove": ((0, 1),), "os.rename": ((0, 2), (1, 3)), "os.link": ((0, 2), (1, 3)), "os.symlink": ((1, 2),),
-    "os.truncate": ((0, None),), "os.chmod": ((0, 2),), "os.chown": ((0, 3),), "os.mkdir": ((0, 2),),
-    "os.rmdir": ((0, 1),), "os.utime": ((0, 3),), "shutil.rmtree": ((0, 1),),
+    "os.remove": ((0, 1),),
+    "os.rename": ((0, 2), (1, 3)),
+    "os.link": ((0, 2), (1, 3)),
+    "os.symlink": ((1, 2),),
+    "os.truncate": ((0, None),),
+    "os.chmod": ((0, 2),),
+    "os.chown": ((0, 3),),
+    "os.mkdir": ((0, 2),),
+    "os.rmdir": ((0, 1),),
+    "os.utime": ((0, 3),),
+    "shutil.rmtree": ((0, 1),),
 }
 _WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_TRUNC | getattr(os, "O_TEMPORARY", 0)
 _PROC_ENVIRON = re.compile(r"^/proc/[^/]+/(task/[^/]+/)?environ$")
@@ -170,23 +179,31 @@ def install(config: dict) -> None:
 
 
 def main() -> None:
-    config = json.loads(os.environ.pop("AUTOTOOL_GUARD", "") or "{}")
-    # The tool runtime loads native code (ctypes) while importing, and FastMCP's constructor does
-    # too (rich's Windows console support). Let it all happen before sealing.
-    import httpx  # noqa: F401
-    import mcp.server.fastmcp
+    raw = os.environ.pop("AUTOTOOL_GUARD", None)  # absent: the sandbox is off, run the tool unguarded
+    # MCP servers log a failing tool's traceback but no longer configure logging themselves; send it
+    # to stderr, where the verifier (and its repair loop) reads it.
+    logging.basicConfig(level=logging.WARNING, stream=sys.stderr, format="%(levelname)s %(name)s: %(message)s")
+    if raw is not None:
+        # The tool runtime loads native code (ctypes) while importing, the server's constructor may
+        # too (console and telemetry support), and httpx2's first client loads the OS certificate
+        # store (truststore: crypt32.dll on Windows). Let it all happen before sealing.
+        import httpx2
+        from mcp.server.mcpserver import MCPServer
 
-    mcp.server.fastmcp.FastMCP("autotool-guard-warmup")
+        MCPServer("autotool-guard-warmup")
+        httpx2.Client().close()
+        install(json.loads(raw or "{}"))
+        if sys.platform == "win32":
+            # The default proactor loop connects via ConnectEx, which raises no socket.connect audit
+            # event, so an IP literal from async code would bypass the allowlist. The selector loop
+            # connects through socket.connect, which the hook sees. Known gap: code that builds a
+            # ProactorEventLoop itself still bypasses this; a container closes it.
+            import asyncio
+            import warnings
 
-    install(config)
-    if sys.platform == "win32":
-        # The default proactor loop connects via ConnectEx, which raises no socket.connect audit
-        # event, so an IP literal from async code would bypass the allowlist. The selector loop
-        # connects through socket.connect, which the hook sees.
-        # ponytail: code that builds a ProactorEventLoop by hand still bypasses this; a container closes it.
-        import asyncio
-
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+            with warnings.catch_warnings():  # event loop policies are deprecated from Python 3.14
+                warnings.simplefilter("ignore", DeprecationWarning)
+                asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     script = sys.argv[1]
     sys.argv = sys.argv[1:]
     runpy.run_path(script, run_name="__main__")

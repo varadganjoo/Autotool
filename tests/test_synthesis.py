@@ -21,10 +21,8 @@ from autotool.synthesis.verifier import ToolVerifier, mock_arguments, static_che
 
 def server(body: str, name: str = "math_tool") -> str:
     return (
-        "from mcp.server.fastmcp import FastMCP\n\n"
-        f'mcp = FastMCP("{name}")\n\n'
-        + textwrap.dedent(body).strip()
-        + '\n\n\nif __name__ == "__main__":\n    mcp.run()\n'
+        "from mcp.server.mcpserver import MCPServer\n\n"
+        f'mcp = MCPServer("{name}")\n\n' + textwrap.dedent(body).strip() + '\n\n\nif __name__ == "__main__":\n    mcp.run()\n'
     )
 
 
@@ -38,9 +36,19 @@ GOOD = server(
 )
 RAISES = server(
     '''
+    from mcp.server.mcpserver.exceptions import ToolError
+
     @mcp.tool()
     def add(a: int, b: int) -> str:
-        """Always fails."""
+        """Always fails, the way the tool contract asks: a ToolError the caller reads."""
+        raise ToolError("upstream exploded")
+    '''
+)
+CRASHES = server(
+    '''
+    @mcp.tool()
+    def add(a: int, b: int) -> str:
+        """Fails unexpectedly: the caller only learns it failed; the traceback goes to stderr."""
         raise ValueError("upstream exploded")
     '''
 )
@@ -74,8 +82,7 @@ def test_static_check_accepts_valid_server():
     "code, fragment",
     [
         ("def f(:\n", "SyntaxError"),
-        ("import os\nprint('hi')\n", "FastMCP"),
-        (GOOD.replace('return str(a + b)', 'print(a); return str(a + b)'), "print"),
+        ("import os\nx = 1\n", "MCPServer"),
         ("import subprocess\n" + GOOD, "subprocess"),
         (GOOD.replace("    mcp.run()\n", "    pass\n"), "mcp.run()"),
     ],
@@ -141,6 +148,13 @@ async def test_verifier_reports_tool_exception(verifier):
     report = await verifier.verify("math_tool", RAISES, smoke_arguments={"a": 1, "b": 1})
     assert not report.ok and report.stage == "smoke_test"
     assert "upstream exploded" in report.error
+
+
+async def test_unexpected_exception_reaches_the_repair_loop_through_stderr(verifier):
+    report = await verifier.verify("math_tool", CRASHES, smoke_arguments={"a": 1, "b": 1})
+    assert not report.ok and report.stage == "smoke_test"
+    assert "upstream exploded" not in report.error  # hidden from the caller by the MCP server ...
+    assert "upstream exploded" in report.failure_summary()  # ... but its traceback is in stderr
 
 
 async def test_verifier_captures_import_crash_stderr(verifier):
@@ -236,8 +250,15 @@ async def test_orchestrator_synthesizes_then_uses_new_tool(tmp_path):
         names = {t["name"] for t in tools}
         seen_tool_sets.append(names)
         if len(seen_tool_sets) == 1:
-            return LLMTurn(tool_calls=[ToolCall(id="s1", name=SYNTHESIZE_TOOL, arguments={
-                "tool_name": "math_tool", "capability_description": "Add two integers."})])
+            return LLMTurn(
+                tool_calls=[
+                    ToolCall(
+                        id="s1",
+                        name=SYNTHESIZE_TOOL,
+                        arguments={"tool_name": "math_tool", "capability_description": "Add two integers."},
+                    )
+                ]
+            )
         if len(seen_tool_sets) == 2:
             return LLMTurn(tool_calls=[ToolCall(id="c1", name="math_tool__add", arguments={"a": 20, "b": 22})])
         result = messages[-1]["content"][0]

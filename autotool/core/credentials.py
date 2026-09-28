@@ -15,12 +15,12 @@ import json
 import logging
 import os
 import re
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Mapping
 
 import keyring
-from keyring.errors import KeyringError, PasswordDeleteError
 from dotenv import dotenv_values
+from keyring.errors import KeyringError, PasswordDeleteError
 
 from autotool.core.policy import load_policy
 from autotool.core.toolenv import ToolEnv, runtime_dotenv_names, runtime_dotenv_path
@@ -93,13 +93,25 @@ def load_tool_env(
         except KeyringError as exc:  # e.g. headless Linux with no keychain backend
             log.warning("Skipping %s: the OS keychain is unavailable (%s); put it in %s instead", name, exc, home / ".env")
     prefixed = [k for k in environ if k.upper().startswith(KEY_PREFIX)]
-    values.update({k[len(KEY_PREFIX):]: environ[k] for k in prefixed})
+    values.update({k[len(KEY_PREFIX) :]: environ[k] for k in prefixed})
     # Strip from tool processes: every source name (via ToolEnv), the prefixed originals, and the
     # .env llm.py loads into the server's own environment.
     policy = load_policy(home)
     from autotool.setup import host_config_paths  # host configs may hold AUTOTOOL_KEY_* values
 
-    protect = [home / ".env", home / "keys.json", home / "policy.json", *([env_file] if env_file else []),
-               *([runtime_dotenv_path()] if runtime_dotenv_path() else []), *host_config_paths()]
-    return ToolEnv(values, also_drop=[*prefixed, *runtime_dotenv_names()], hosts=policy["hosts"],
-                   approvals=policy["approvals"] if consent else None, protect=[str(p) for p in protect], guard=guard)
+    protect = [
+        home / ".env",
+        home / "keys.json",
+        home / "policy.json",
+        *([env_file] if env_file else []),
+        *([runtime_dotenv_path()] if runtime_dotenv_path() else []),
+        *host_config_paths(),
+    ]
+    return ToolEnv(
+        values,
+        also_drop=[*prefixed, *runtime_dotenv_names()],
+        hosts=policy["hosts"],
+        approvals=policy["approvals"] if consent else None,
+        protect=[str(p) for p in protect],
+        guard=guard,
+    )

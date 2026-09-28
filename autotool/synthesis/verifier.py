@@ -12,8 +12,9 @@ import asyncio
 import tempfile
 import time
 import traceback
+from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Iterable
+from typing import Any
 
 from autotool.clients.dynamic_client import DynamicMCPClient, render_call_result
 from autotool.core.schema import MCPToolDescriptor, VerificationReport
@@ -33,10 +34,10 @@ def static_check(code: str, available: Iterable[str] | None = None) -> str | Non
         return f"SyntaxError: {exc.msg} (line {exc.lineno}): {exc.text!r}"
 
     problems: list[str] = []
-    imports_fastmcp = False
+    imports_server = False
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module == "mcp.server.fastmcp":
-            imports_fastmcp = imports_fastmcp or any(a.name == "FastMCP" for a in node.names)
+        if isinstance(node, ast.ImportFrom) and node.module == "mcp.server.mcpserver":
+            imports_server = imports_server or any(a.name == "MCPServer" for a in node.names)
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             names = [a.name for a in node.names] if isinstance(node, ast.Import) else [node.module or ""]
             for n in names:
@@ -46,15 +47,13 @@ def static_check(code: str, available: Iterable[str] | None = None) -> str | Non
             f = node.func
             if isinstance(f, ast.Name) and f.id in _BANNED_CALLS:
                 problems.append(f"line {node.lineno}: calling '{f.id}' is not allowed")
-            if isinstance(f, ast.Name) and f.id == "print" and not any(k.arg == "file" for k in node.keywords):
-                problems.append(f"line {node.lineno}: bare print() writes to stdout and corrupts the MCP stdio stream; log to sys.stderr")
             if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and (f.value.id, f.attr) in _BANNED_ATTRS:
                 problems.append(f"line {node.lineno}: '{f.value.id}.{f.attr}' is not allowed")
 
-    if not imports_fastmcp:
-        problems.append("missing 'from mcp.server.fastmcp import FastMCP'")
+    if not imports_server:
+        problems.append("missing 'from mcp.server.mcpserver import MCPServer'")
     if not _has_main_guard_run(tree):
-        problems.append("missing `if __name__ == \"__main__\": mcp.run()` entrypoint")
+        problems.append('missing `if __name__ == "__main__": mcp.run()` entrypoint')
     try:
         declared = required_env(code)
     except ValueError as exc:
@@ -74,8 +73,7 @@ def _has_main_guard_run(tree: ast.Module) -> bool:
     for node in tree.body:
         if isinstance(node, ast.If) and "__main__" in ast.unparse(node.test):
             if any(
-                isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "run"
-                for n in ast.walk(node)
+                isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "run" for n in ast.walk(node)
             ):
                 return True
     return False
@@ -164,7 +162,9 @@ class ToolVerifier:
             pending.parent.mkdir(parents=True, exist_ok=True)
             pending.write_text(code, encoding="utf-8")
             return VerificationReport(
-                ok=False, stage="consent", duration_s=time.monotonic() - started,
+                ok=False,
+                stage="consent",
+                duration_s=time.monotonic() - started,
                 error=f"The user has not approved tool '{tool_name}' to use {', '.join(declared)} (they declined, or this "
                 f"host cannot show approval prompts). Ask the user to run `autotool tools approve {tool_name} {keys}`, "
                 "then call create_tool again.",
@@ -183,7 +183,7 @@ class ToolVerifier:
                     report = await self._exercise(client, state, primary_tool, smoke_arguments)
             except TimeoutError:
                 report = self._fail(state, f"Timed out after {self.timeout_s:.0f}s during '{state['stage']}'")
-            except Exception:  # noqa: BLE001 - every failure mode becomes repair input
+            except Exception:
                 report = self._fail(state, traceback.format_exc(limit=6))
             finally:
                 await client.close()
@@ -192,7 +192,11 @@ class ToolVerifier:
         report.duration_s = time.monotonic() - started
         # Everything in the report can reach the LLM (repair prompt, events): scrub secret values.
         redact = self.tool_env.redact
-        report.error, report.stderr, report.smoke_output = redact(report.error), redact(report.stderr), redact(report.smoke_output)
+        report.error, report.stderr, report.smoke_output = (
+            redact(report.error),
+            redact(report.stderr),
+            redact(report.smoke_output),
+        )
         return report
 
     @staticmethod
@@ -233,11 +237,16 @@ class ToolVerifier:
 
         result = await client.call_tool(target.name, args)
         output = render_call_result(result)
-        if result.isError:
+        if result.is_error:
             raise AssertionError(f"Tool '{target.name}' raised an error for arguments {args}:\n{output}")
         if not output.strip():
             raise AssertionError(f"Tool '{target.name}' returned no text content for arguments {args}")
 
         return VerificationReport(
-            ok=True, stage="passed", tools=tools, smoke_tool=target.name, smoke_arguments=args, smoke_output=self.tool_env.redact(output)[:2000]  # redact first: a cut key would leak its prefix
+            ok=True,
+            stage="passed",
+            tools=tools,
+            smoke_tool=target.name,
+            smoke_arguments=args,
+            smoke_output=self.tool_env.redact(output)[:2000],  # redact first: a cut key would leak its prefix
         )

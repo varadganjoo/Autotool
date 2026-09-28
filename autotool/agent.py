@@ -16,12 +16,12 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable
+from typing import Any
 
-from mcp import ClientSession, StdioServerParameters, types
-from mcp.client.stdio import stdio_client
+from mcp import Client, StdioServerParameters, types
 
 from autotool.core.llm import LLMProvider
 from autotool.core.schema import ToolResult
@@ -38,8 +38,8 @@ async def connect(
     env: dict[str, str] | None = None,
     on_consent: Callable[[str], bool] | None = None,
     server: StdioServerParameters | None = None,
-) -> AsyncIterator[ClientSession]:
-    """Start `autotool serve` as a subprocess and yield an initialized MCP session.
+) -> AsyncIterator[Client]:
+    """Start `autotool serve` as a subprocess and yield a connected MCP client.
 
     home: AutoTool's data directory (default ~/.autotool). env: extra environment for the
     server, e.g. {"AUTOTOOL_KEY_TAVILY_API_KEY": "..."}. on_consent: shown AutoTool's approval
@@ -54,22 +54,21 @@ async def connect(
     async def elicit(context: Any, params: types.ElicitRequestParams) -> types.ElicitResult:
         return types.ElicitResult(action="accept", content={"allow": bool(on_consent and on_consent(params.message))})
 
-    async with stdio_client(server) as (read, write), ClientSession(
-        read, write, elicitation_callback=elicit if on_consent else None
-    ) as session:
-        await session.initialize()
-        yield session
+    async with Client(server, elicitation_callback=elicit if on_consent else None) as client:
+        yield client
 
 
 def openai_tools(listed: types.ListToolsResult) -> list[dict[str, Any]]:
     """Tool schemas for the OpenAI Responses API (`tools=`)."""
-    return [{"type": "function", "name": t.name, "description": t.description or "", "parameters": t.inputSchema}
-            for t in listed.tools]
+    return [
+        {"type": "function", "name": t.name, "description": t.description or "", "parameters": t.input_schema}
+        for t in listed.tools
+    ]
 
 
 def anthropic_tools(listed: types.ListToolsResult) -> list[dict[str, Any]]:
     """Tool schemas for the Anthropic Messages API (`tools=`)."""
-    return [{"name": t.name, "description": t.description or "", "input_schema": t.inputSchema} for t in listed.tools]
+    return [{"name": t.name, "description": t.description or "", "input_schema": t.input_schema} for t in listed.tools]
 
 
 def _text(result: types.CallToolResult) -> str:
@@ -102,7 +101,6 @@ async def run_agent(
                 result = await session.call_tool(call.name, call.arguments)
                 if on_tool:
                     on_tool(call.name, call.arguments, result)
-                results.append(ToolResult(call_id=call.id, content=_text(result), is_error=bool(result.isError)))
+                results.append(ToolResult(call_id=call.id, content=_text(result), is_error=bool(result.is_error)))
             messages.extend(provider.tool_results_messages(results))
         raise RuntimeError(f"no answer within {max_steps} steps")
-

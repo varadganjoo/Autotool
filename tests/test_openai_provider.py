@@ -1,5 +1,5 @@
 """OpenAIProvider through the real ``openai`` SDK, with HTTP served by an
-in-process fake (httpx.MockTransport). Exercises request serialization,
+in-process fake (httpx2.MockTransport). Exercises request serialization,
 function-calling round-trips, structured outputs and tool-result history."""
 
 from __future__ import annotations
@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import httpx
+import httpx2
 import openai
 import pytest
 
@@ -57,7 +57,7 @@ class FakeOpenAI:
     def __init__(self) -> None:
         self.requests: list[dict[str, Any]] = []
 
-    def __call__(self, request: httpx.Request) -> httpx.Response:
+    def __call__(self, request: httpx2.Request) -> httpx2.Response:
         body = json.loads(request.content)
         self.requests.append(body)
         assert request.url.path.endswith("/responses")
@@ -67,22 +67,22 @@ class FakeOpenAI:
             schema = body["text"]["format"]
             assert schema["name"] == "GeneratedToolCandidate"
             payload = {"code": GOOD, "primary_tool": "add", "smoke_test_arguments_json": '{"a": 1, "b": 2}'}
-            return httpx.Response(200, json=response_item([text_item(json.dumps(payload))]))
+            return httpx2.Response(200, json=response_item([text_item(json.dumps(payload))]))
 
         tool_names = {t["name"] for t in body.get("tools", [])}
         last = body["input"][-1]
         if last.get("role") == "user":
             assert tool_names == {SYNTHESIZE_TOOL}
             call = tool_call_item("call_s", SYNTHESIZE_TOOL, {"tool_name": "math_tool", "capability_description": "Add ints"})
-            return httpx.Response(200, json=response_item([call]))
+            return httpx2.Response(200, json=response_item([call]))
         if last.get("type") == "function_call_output" and last.get("call_id") == "call_s":
             assert "math_tool__add" in tool_names  # hot-loaded before the next request
             call = tool_call_item("call_a", "math_tool__add", {"a": 20, "b": 22})
-            return httpx.Response(200, json=response_item([call]))
+            return httpx2.Response(200, json=response_item([call]))
         if last.get("type") == "function_call_output" and last.get("call_id") == "call_a":
             # The assistant tool_calls turn preceding it must be replayed intact.
             assert body["input"][-2]["call_id"] == "call_a"
-            return httpx.Response(200, json=response_item([text_item(f"The answer is {last['output']}.")]))
+            return httpx2.Response(200, json=response_item([text_item(f"The answer is {last['output']}.")]))
         raise AssertionError(f"unexpected request: {body['input']}")
 
 
@@ -94,7 +94,9 @@ def fake() -> FakeOpenAI:
 @pytest.fixture
 def provider(fake: FakeOpenAI) -> OpenAIProvider:
     client = openai.AsyncOpenAI(
-        api_key="test", base_url="https://fake.openai.test/v1", http_client=httpx.AsyncClient(transport=httpx.MockTransport(fake))
+        api_key="test",
+        base_url="https://fake.openai.test/v1",
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(fake)),
     )
     return OpenAIProvider("gpt-test", client=client)
 

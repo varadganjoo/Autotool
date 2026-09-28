@@ -43,15 +43,36 @@ HN_API = "https://hacker-news.firebaseio.com/v0"
 # ---------------------------------------------------------------- offline replay
 
 FIXTURE_STORIES = {
-    9001: {"id": 9001, "type": "story", "title": "[fixture] Example story one", "url": "https://example.com/one", "score": 300, "by": "fixture"},
-    9002: {"id": 9002, "type": "story", "title": "[fixture] Example story two", "url": "https://example.com/two", "score": 200, "by": "fixture"},
+    9001: {
+        "id": 9001,
+        "type": "story",
+        "title": "[fixture] Example story one",
+        "url": "https://example.com/one",
+        "score": 300,
+        "by": "fixture",
+    },
+    9002: {
+        "id": 9002,
+        "type": "story",
+        "title": "[fixture] Example story two",
+        "url": "https://example.com/two",
+        "score": 200,
+        "by": "fixture",
+    },
     9003: {"id": 9003, "type": "story", "title": "[fixture] Ask HN: example without a URL", "score": 150, "by": "fixture"},
-    9004: {"id": 9004, "type": "story", "title": "[fixture] Example story four", "url": "https://example.com/four", "score": 90, "by": "fixture"},
+    9004: {
+        "id": 9004,
+        "type": "story",
+        "title": "[fixture] Example story four",
+        "url": "https://example.com/four",
+        "score": 90,
+        "by": "fixture",
+    },
 }
 
 
 class _FixtureHN(BaseHTTPRequestHandler):
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         if self.path == "/v0/topstories.json":
             body: Any = list(FIXTURE_STORIES)
         elif self.path.startswith("/v0/item/") and self.path.endswith(".json"):
@@ -81,10 +102,10 @@ import asyncio
 import json
 import os
 
-import httpx
-from mcp.server.fastmcp import FastMCP
+import httpx2
+from mcp.server.mcpserver import MCPServer
 
-mcp = FastMCP("hackernews_tool")
+mcp = MCPServer("hackernews_tool")
 HN_API_BASE = os.environ.get("HN_API_BASE", "https://hacker-news.firebaseio.com/v0").rstrip("/")
 
 
@@ -96,7 +117,7 @@ async def get_top_stories(limit: int = 3) -> str:
         limit: Number of stories to return (1-30).
     """
     limit = max(1, min(int(limit), 30))
-    async with httpx.AsyncClient(timeout=10) as client:
+    async with httpx2.AsyncClient(timeout=10) as client:
         resp = await client.get(f"{HN_API_BASE}/{TOP_PATH}")
         resp.raise_for_status()
         ids = resp.json()[:limit]
@@ -145,15 +166,22 @@ def build_scripted_provider() -> ScriptedProvider:
         if last_result is None and hn_tool not in names:
             return LLMTurn(
                 text="I have no tool for Hacker News yet; building one.",
-                tool_calls=[ToolCall(id="call_1", name=SYNTHESIZE_TOOL, arguments={
-                    "tool_name": "hackernews_tool",
-                    "capability_description": "Fetch the current top N Hacker News stories via the public Firebase API "
-                    "(topstories.json then item/<id>.json) and return rank, title, url, score and author as JSON.",
-                })],
+                tool_calls=[
+                    ToolCall(
+                        id="call_1",
+                        name=SYNTHESIZE_TOOL,
+                        arguments={
+                            "tool_name": "hackernews_tool",
+                            "capability_description": "Fetch the current top N Hacker News stories via the public Firebase API "
+                            "(topstories.json then item/<id>.json) and return rank, title, url, score and author as JSON.",
+                        },
+                    )
+                ],
             )
         if hn_tool in names and not any(
             isinstance(m["content"], list) and any(b.get("type") == "tool_use" and b.get("name") == hn_tool for b in m["content"])
-            for m in messages if m["role"] == "assistant"
+            for m in messages
+            if m["role"] == "assistant"
         ):
             return LLMTurn(tool_calls=[ToolCall(id="call_2", name=hn_tool, arguments={"limit": 3})])
 
@@ -171,11 +199,11 @@ def live_available() -> bool:
     if not any(os.environ.get(k) for k in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")):
         return False
     try:
-        import httpx
+        import httpx2
 
-        httpx.get(f"{HN_API}/maxitem.json", timeout=5).raise_for_status()
+        httpx2.get(f"{HN_API}/maxitem.json", timeout=5).raise_for_status()
         return True
-    except Exception:  # noqa: BLE001
+    except Exception:
         return False
 
 

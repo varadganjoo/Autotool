@@ -23,7 +23,9 @@ def run_guarded(tmp_path: Path, body: str, config: dict) -> subprocess.Completed
     script = tmp_path / "probe.py"
     script.write_text(textwrap.dedent(body))
     env = {**os.environ, "AUTOTOOL_GUARD": json.dumps(config), "PYTHONPATH": str(ROOT)}
-    return subprocess.run([sys.executable, "-m", "autotool.guard", str(script)], capture_output=True, text=True, env=env, timeout=60)
+    return subprocess.run(
+        [sys.executable, "-m", "autotool.guard", str(script)], capture_output=True, text=True, env=env, timeout=60
+    )
 
 
 def test_host_patterns():
@@ -34,7 +36,9 @@ def test_host_patterns():
 
 
 def test_restricted_tool_cannot_reach_other_hosts(tmp_path):
-    r = run_guarded(tmp_path, """
+    r = run_guarded(
+        tmp_path,
+        """
         import socket
         try:
             socket.getaddrinfo("exfil.example.org", 443)
@@ -42,26 +46,35 @@ def test_restricted_tool_cannot_reach_other_hosts(tmp_path):
             print("BLOCKED", e)
         socket.getaddrinfo("localhost", 80)
         print("LOCALHOST OK")
-    """, {"hosts": ["localhost"]})
+    """,
+        {"hosts": ["localhost"]},
+    )
     assert "BLOCKED" in r.stdout and "exfil.example.org" in r.stdout and "LOCALHOST OK" in r.stdout, r.stderr
 
 
 def test_unrestricted_tool_resolves_freely(tmp_path):
-    r = run_guarded(tmp_path, """
+    r = run_guarded(
+        tmp_path,
+        """
         import socket
         socket.getaddrinfo("localhost", 80)
         print("OK")
-    """, {"hosts": None})
+    """,
+        {"hosts": None},
+    )
     assert "OK" in r.stdout, r.stderr
 
 
 # These escape attempts never execute: the guard must refuse them before they run.
-@pytest.mark.parametrize("code, what", [
-    ("import subprocess; subprocess.run(['whoami'])", "subprocess"),
-    ("import os; os.system('whoami')", "os.system"),  # deliberate: proves the shell sink is blocked
-    ("import keyring", "keyring"),
-    ("import ctypes; ctypes.CDLL('msvcrt' if __import__('sys').platform == 'win32' else 'libc.so.6')", "ctypes"),
-])
+@pytest.mark.parametrize(
+    "code, what",
+    [
+        ("import subprocess; subprocess.run(['whoami'])", "subprocess"),
+        ("import os; os.system('whoami')", "os.system"),  # deliberate: proves the shell sink is blocked
+        ("import keyring", "keyring"),
+        ("import ctypes; ctypes.CDLL('msvcrt' if __import__('sys').platform == 'win32' else 'libc.so.6')", "ctypes"),
+    ],
+)
 def test_escape_hatches_are_blocked(tmp_path, code, what):
     r = run_guarded(tmp_path, code, {})
     assert r.returncode != 0 and "blocked by AutoTool" in r.stderr and what in r.stderr, r.stderr
@@ -73,7 +86,9 @@ def test_credential_files_are_unreadable_and_writes_stay_in_temp(tmp_path):
     secret.write_text("OPENAI_API_KEY=sk-x\n")
     inside_temp = Path(tempfile.gettempdir()) / "autotool-guard-test.txt"
     outside_temp = ROOT / "guard-must-not-write-this.txt"  # tmp_path itself lives inside the temp dir
-    r = run_guarded(tmp_path, f"""
+    r = run_guarded(
+        tmp_path,
+        f"""
         for attempt in (lambda: open({str(secret)!r}).read(), lambda: open({str(outside_temp)!r}, 'w')):
             try:
                 attempt()
@@ -81,18 +96,20 @@ def test_credential_files_are_unreadable_and_writes_stay_in_temp(tmp_path):
                 print("BLOCKED", e)
         open({str(inside_temp)!r}, "w").write("ok")
         print("TEMP OK")
-    """, {"protect": [str(secret)]})
+    """,
+        {"protect": [str(secret)]},
+    )
     written = outside_temp.exists()
     outside_temp.unlink(missing_ok=True)
     inside_temp.unlink(missing_ok=True)
     assert r.stdout.count("BLOCKED") == 2 and "TEMP OK" in r.stdout and not written, r.stderr
 
 
-def test_fastmcp_tool_still_runs_under_the_guard(tmp_path):
-    from tests.test_synthesis import GOOD
-
+def test_mcp_tool_server_still_runs_under_the_guard(tmp_path):
     import anyio
+
     from autotool.clients.dynamic_client import DynamicMCPClient
+    from tests.test_synthesis import GOOD
 
     script = tmp_path / "math_tool.py"
     script.write_text(GOOD)
@@ -128,7 +145,7 @@ def test_policy_hosts_and_approvals_round_trip(tmp_path):
 def test_corrupt_policy_fails_closed_with_a_clear_message(tmp_path):
     for bad in ("{ not json", "[]", '{"hosts": null}', '{"approvals": {"t": ["A_KEY"]}}'):
         (tmp_path / "policy.json").write_text(bad)
-        with pytest.raises(ValueError, match="policy.json"):
+        with pytest.raises(ValueError, match=r"policy\.json"):
             load_policy(tmp_path)
 
 
@@ -161,8 +178,9 @@ def test_allowlist_hosts_are_normalized():
 
 
 def test_toolenv_restricts_egress_to_the_union_of_restricted_keys():
-    env = ToolEnv({"A_KEY": "a" * 20, "B_KEY": "b" * 20, "C_KEY": "c" * 20},
-                  hosts={"A_KEY": ["a.example.com"], "B_KEY": ["b.example.com"]})
+    env = ToolEnv(
+        {"A_KEY": "a" * 20, "B_KEY": "b" * 20, "C_KEY": "c" * 20}, hosts={"A_KEY": ["a.example.com"], "B_KEY": ["b.example.com"]}
+    )
     assert env.allowed_hosts(["C_KEY"]) is None  # no allowlist: unrestricted (opt-in feature)
     assert env.allowed_hosts(["A_KEY", "C_KEY"]) == ["a.example.com"]  # a restricted key restricts the tool
     assert sorted(env.allowed_hosts(["A_KEY", "B_KEY"])) == ["a.example.com", "b.example.com"]
@@ -189,7 +207,7 @@ def test_restricted_async_tool_runs_under_the_guard(tmp_path):
     from autotool.clients.dynamic_client import DynamicMCPClient
     from tests.test_synthesis import GOOD
 
-    code = GOOD.replace("mcp = FastMCP", 'REQUIRED_ENV = ["A_KEY"]\nmcp = FastMCP')
+    code = GOOD.replace("mcp = MCPServer", 'REQUIRED_ENV = ["A_KEY"]\nmcp = MCPServer')
     script = tmp_path / "math_tool.py"
     script.write_text(code)
     env = ToolEnv({"A_KEY": "a" * 20}, hosts={"A_KEY": ["a.example.com"]}).env_for(code)
@@ -204,7 +222,9 @@ def test_restricted_async_tool_runs_under_the_guard(tmp_path):
 def test_async_connection_to_an_ip_literal_is_checked(tmp_path):
     # An IP literal skips name resolution, so only the connect check can stop it. asyncio's Windows
     # proactor loop connects without raising the socket.connect audit event.
-    r = run_guarded(tmp_path, """
+    r = run_guarded(
+        tmp_path,
+        """
         import asyncio
 
         async def main():
@@ -216,7 +236,9 @@ def test_async_connection_to_an_ip_literal_is_checked(tmp_path):
                 print("NOT BLOCKED", type(e).__name__)
 
         asyncio.run(main())
-    """, {"hosts": ["a.example.com"]})
+    """,
+        {"hosts": ["a.example.com"]},
+    )
     assert "BLOCKED blocked by AutoTool's guard: network access to 192.0.2.1" in r.stdout, r.stdout + r.stderr
 
 
@@ -235,7 +257,9 @@ def test_file_changes_outside_temp_are_blocked(tmp_path):
     victim.write_text("keep me")
     scratch = Path(tempfile.gettempdir()) / "autotool-guard-scratch"
     try:
-        r = run_guarded(tmp_path, f"""
+        r = run_guarded(
+            tmp_path,
+            f"""
             import os, shutil
             from pathlib import Path
             victim, scratch = Path({str(victim)!r}), Path({str(scratch)!r})
@@ -256,7 +280,9 @@ def test_file_changes_outside_temp_are_blocked(tmp_path):
                     print("BLOCKED", name)
             scratch.mkdir(exist_ok=True); (scratch / "f").write_text("x"); shutil.rmtree(scratch)
             print("TEMP OK")
-        """, {})
+        """,
+            {},
+        )
         assert "ALLOWED" not in r.stdout and r.stdout.count("BLOCKED") == 7 and "TEMP OK" in r.stdout, r.stdout + r.stderr
         assert victim.read_text() == "keep me"
     finally:
@@ -280,7 +306,9 @@ def test_protected_file_reached_through_a_symlink_is_still_protected(tmp_path):
 
 
 def test_every_resolver_and_udp_send_is_checked(tmp_path):
-    r = run_guarded(tmp_path, """
+    r = run_guarded(
+        tmp_path,
+        """
         import socket
         checks = {
             "gethostbyname": lambda: socket.gethostbyname("exfil.example.org"),
@@ -298,7 +326,9 @@ def test_every_resolver_and_udp_send_is_checked(tmp_path):
                 print("BLOCKED", name)
             except OSError:
                 print("ALLOWED", name)
-    """, {"hosts": ["a.example.com"]})
+    """,
+        {"hosts": ["a.example.com"]},
+    )
     assert "ALLOWED" not in r.stdout and "BLOCKED gethostbyname" in r.stdout, r.stdout + r.stderr
 
 

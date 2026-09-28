@@ -20,22 +20,23 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    "mcp>=1.30,<2",
-    "pydantic>=2.7,<3",
-    "httpx>=0.27,<1",
-    "anyio>=4.4,<5",
-    "python-dotenv>=1.0,<2",
-    "keyring>=25,<26",
+    "mcp>=2.2,<3",
+    "httpx2>=2.13,<3",
+    "pydantic>=2.13,<3",
+    "anyio>=4.15,<5",
+    "python-dotenv>=1.2,<2",
+    "keyring>=25.7,<26",
 ]
 
 [project.optional-dependencies]
 # Only for synthesize_tool (AutoTool writes tools with its own model key) and the `autotool run` demo agent.
-models = ["openai>=1.60,<3", "anthropic>=1.0,<2"]
-dev = ["autotool-mcp[models]", "pytest>=8,<10", "pytest-asyncio>=0.23,<2"]
+models = ["openai>=3.19,<4", "anthropic>=1.8,<2"]
+dev = ["autotool-mcp[models]", "pytest>=9.1,<10", "pytest-asyncio>=1.4,<2", "ruff>=0.16,<0.17"]
 
 [project.urls]
 Homepage = "https://github.com/varadganjoo/Autotool"
@@ -52,3 +53,19 @@ include = ["autotool*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+filterwarnings = ["error::DeprecationWarning:autotool.*"]
+
+[tool.ruff]
+line-length = 130
+target-version = "py311"
+extend-exclude = ["paper/results"]  # tools the agents wrote during the experiments, kept verbatim
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "RUF"]
+ignore = [
+    "E501",      # the formatter owns line length
+    "ASYNC240",  # reading a small local script before mounting it; a thread hop buys nothing
+]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/auth_benchmark.py" = ["RUF001"]  # matches the Unicode minus and apostrophes models write

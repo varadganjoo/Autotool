@@ -17,8 +17,9 @@ import json
 import os
 import tempfile
 import time
+from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any
 from urllib.parse import urlsplit
 
 
@@ -75,8 +76,11 @@ def load_policy(home: Path) -> dict[str, Any]:
     if not isinstance(hosts, dict) or not all(isinstance(v, list) and all(isinstance(h, str) for h in v) for v in hosts.values()):
         raise _invalid(home, '"hosts" must map key names to lists of hosts')
     if not isinstance(approvals, dict) or not all(
-        isinstance(a, dict) and isinstance(a.get("keys"), list) and isinstance(a.get("sha256"), str)
-        and (a.get("hosts") is None or isinstance(a["hosts"], list)) for a in approvals.values()
+        isinstance(a, dict)
+        and isinstance(a.get("keys"), list)
+        and isinstance(a.get("sha256"), str)
+        and (a.get("hosts") is None or isinstance(a["hosts"], list))
+        for a in approvals.values()
     ):
         raise _invalid(home, '"approvals" must map tool names to {"keys": [...], "sha256": "..."}')
     return policy

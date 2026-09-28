@@ -21,3 +21,8 @@
 - Per-key host allowlists (`autotool keys allow`) and an in-process guard, on by default
   (`--sandbox off` when AutoTool already runs in a sandbox).
 - `autotool setup` for Claude Code, Codex, Claude Desktop, Cursor and OpenClaw.
+- Built on the MCP Python SDK 2.x and speaks both protocol eras: 2026-07-28 hosts get consent
+  through an input-required round trip and tool-list changes on `subscriptions/listen`; older
+  hosts get form elicitation and `notifications/tools/list_changed`.
+- Current stack throughout: `httpx2`, the OpenAI SDK 3.x (Responses API; default `gpt-6-sol`), the
+  Anthropic SDK 1.x (default `claude-opus-5`, server-side refusal fallbacks), Python 3.11-3.14.
