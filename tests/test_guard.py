@@ -19,6 +19,16 @@ from autotool.guard import host_allowed
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def outside_temp() -> Path:
+    """A writable directory outside the temp dir, where the guard must refuse file changes. The
+    checkout is the natural choice, but it can itself live in the temp dir (a CI scratch clone)."""
+    temp = os.path.normcase(os.path.realpath(tempfile.gettempdir())) + os.sep
+    for candidate in (ROOT, Path.home()):
+        if not os.path.normcase(os.path.realpath(candidate)).startswith(temp):
+            return candidate
+    pytest.skip("both the checkout and the home directory are inside the temp dir")
+
+
 def run_guarded(tmp_path: Path, body: str, config: dict) -> subprocess.CompletedProcess:
     script = tmp_path / "probe.py"
     script.write_text(textwrap.dedent(body))
@@ -85,11 +95,11 @@ def test_credential_files_are_unreadable_and_writes_stay_in_temp(tmp_path):
     secret.parent.mkdir()
     secret.write_text("OPENAI_API_KEY=sk-x\n")
     inside_temp = Path(tempfile.gettempdir()) / "autotool-guard-test.txt"
-    outside_temp = ROOT / "guard-must-not-write-this.txt"  # tmp_path itself lives inside the temp dir
+    outside = outside_temp() / "guard-must-not-write-this.txt"  # tmp_path itself lives inside the temp dir
     r = run_guarded(
         tmp_path,
         f"""
-        for attempt in (lambda: open({str(secret)!r}).read(), lambda: open({str(outside_temp)!r}, 'w')):
+        for attempt in (lambda: open({str(secret)!r}).read(), lambda: open({str(outside)!r}, 'w')):
             try:
                 attempt()
             except PermissionError as e:
@@ -99,8 +109,8 @@ def test_credential_files_are_unreadable_and_writes_stay_in_temp(tmp_path):
     """,
         {"protect": [str(secret)]},
     )
-    written = outside_temp.exists()
-    outside_temp.unlink(missing_ok=True)
+    written = outside.exists()
+    outside.unlink(missing_ok=True)
     inside_temp.unlink(missing_ok=True)
     assert r.stdout.count("BLOCKED") == 2 and "TEMP OK" in r.stdout and not written, r.stderr
 
@@ -253,7 +263,7 @@ def test_other_credential_store_modules_are_blocked(tmp_path, module):
 
 
 def test_file_changes_outside_temp_are_blocked(tmp_path):
-    victim = ROOT / "guard-victim.txt"
+    victim = outside_temp() / "guard-victim.txt"
     victim.write_text("keep me")
     scratch = Path(tempfile.gettempdir()) / "autotool-guard-scratch"
     try:
