@@ -41,7 +41,7 @@ from dotenv import load_dotenv  # noqa: E402
 load_dotenv(ROOT / ".env")  # model keys for the benchmark's own agents
 
 import auth_benchmark as ab  # noqa: E402
-from mcp_agent import run_agent  # noqa: E402
+from autotool import run_agent  # noqa: E402
 
 from autotool.core.llm import default_provider  # noqa: E402
 from autotool.core.toolenv import ToolEnv, required_env  # noqa: E402
@@ -125,7 +125,7 @@ async def run_custom(prompt: str, env: dict[str, str], args: argparse.Namespace)
     provider = ab.RecordingProvider(default_provider(args.provider, args.model))
     calls: list[str] = []
     prompts: list[str] = []  # a simulated user who approves every consent prompt it is shown
-    answer = await run_agent(prompt, provider, StdioServerParameters(command=sys.executable, args=["-m", "autotool", "serve"], env=env),
+    answer = await run_agent(prompt, provider, server=StdioServerParameters(command=sys.executable, args=["-m", "autotool", "serve"], env=env),
                              on_tool=lambda name, a, r: calls.append(name), on_consent=lambda msg: prompts.append(msg) or True)
     return {"answer": answer, "calls": calls, "transcript": "\n".join(provider.sent + prompts), "cost_usd": None, "error": None,
             "tokens": [provider.usage.input_tokens, provider.usage.output_tokens], "consent_prompts": prompts}

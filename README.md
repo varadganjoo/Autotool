@@ -22,19 +22,58 @@ your agent (Claude Code, Codex, Cursor, your own) ──MCP──▶ autotool se
 
 ## Quick start
 
+Python 3.11+. Pick the way you work:
+
+### Build your own agent (Python)
+
 ```bash
-pipx install autotool-mcp        # or: uv tool install autotool-mcp
-autotool setup                   # connects Claude Code, Codex, Claude Desktop, Cursor, OpenClaw (whichever you have)
-autotool keys add TAVILY_API_KEY # stored in your OS keychain; add as many as you like
+pip install "autotool-mcp[models]"
+export OPENAI_API_KEY=sk-...        # your agent's model (or ANTHROPIC_API_KEY)
 ```
 
-Restart your agent and ask for something it can't do yet: *"Search the web for this week's
-James Webb news"*. It writes a Tavily tool, AutoTool verifies it and hands it `TAVILY_API_KEY`
-(and nothing else), and the answer comes back. Next time, the tool is already there.
+```python
+import asyncio, autotool
+from autotool.core.llm import default_provider
+
+answer = asyncio.run(autotool.run_agent(
+    "What are the top 3 stories on Hacker News right now?",
+    default_provider(),
+    on_consent=lambda question: input(question + " [y/N] ") == "y",  # asked before a tool gets a key
+))
+print(answer)
+```
+
+The agent has no Hacker News tool. It writes one, AutoTool verifies and mounts it, and the agent
+uses it. Run it again and the tool is already there.
+
+**Already have an agent loop?** Connect it to AutoTool and pass tool calls through:
+
+```python
+async with autotool.connect() as session:                    # starts AutoTool as an MCP server
+    listed = await session.list_tools()                      # create_tool, run_tool, every tool created so far
+    tools = autotool.openai_tools(listed)                     # or autotool.anthropic_tools(listed)
+    result = await session.call_tool(name, arguments)        # whatever your model asked for
+```
+
+Frameworks with stdio MCP support (OpenAI Agents SDK `MCPServerStdio`, LangGraph via
+`langchain-mcp-adapters`) can also launch `autotool serve` directly.
+
+### Add it to Claude Code, Codex, Cursor, Claude Desktop or OpenClaw
+
+```bash
+pip install autotool-mcp            # or: pipx install autotool-mcp / uv tool install autotool-mcp
+autotool setup                      # registers AutoTool with every agent app it finds
+autotool keys add TAVILY_API_KEY    # stored in your OS keychain; add as many as you like
+```
+
+Restart your agent app and ask for something it can't do yet: *"Search the web for this week's
+James Webb news"*. It writes a Tavily tool. AutoTool asks whether that tool may use
+`TAVILY_API_KEY`, verifies it, hands it that key and nothing else, and the answer comes back.
+Next time, the tool is already there.
 
 `autotool setup --dry-run` shows what it would change first. JSON configs (Claude Desktop, Cursor)
 are backed up to `.bak` before editing. Existing entries keep their `env` block, and an existing
-Claude Code entry is left untouched.
+Claude Code or Codex entry is left untouched.
 
 ## Adding credentials
 
@@ -55,27 +94,7 @@ loads on the next restart. `autotool keys list` shows names. `autotool tools lis
 which tools hold which credentials. If a tool needs a key you don't have, your agent is told
 exactly what to run (`autotool keys add STRIPE_API_KEY`).
 
-## Your own agent
-
-Anything that speaks MCP works. Start `autotool serve` over stdio, list tools each turn, and pass
-tool calls through. [`examples/mcp_agent.py`](https://github.com/varadganjoo/Autotool/blob/main/examples/mcp_agent.py) is a complete agent in about
-50 lines:
-
-```python
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-
-server = StdioServerParameters(command="autotool", args=["serve"])
-async with stdio_client(server) as (read, write), ClientSession(read, write) as session:
-    await session.initialize()
-    tools = (await session.list_tools()).tools        # create_tool, run_tool, and every tool created so far
-    result = await session.call_tool(name, arguments)  # whatever your model asks for
-```
-
-Frameworks with stdio MCP support (OpenAI Agents SDK `MCPServerStdio`, LangGraph via
-`langchain-mcp-adapters`) connect the same way.
-
-### No coding agent? Let AutoTool write the tools
+## Let AutoTool write the tools
 
 If your agent is small or not good at writing code, give AutoTool a model key (`OPENAI_API_KEY` or
 `ANTHROPIC_API_KEY` in `~/.autotool/.env`). Only a key in that file counts: a key your host happens

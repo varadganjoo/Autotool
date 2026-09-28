@@ -2,6 +2,9 @@
 
 ## 0.1.0 — first public release
 
+- Python API: `autotool.run_agent(prompt, provider)` is a complete agent that writes the tools it
+  needs; `autotool.connect()` gives your own agent loop an AutoTool session, with
+  `autotool.openai_tools()` / `autotool.anthropic_tools()` for tool schemas.
 - `autotool serve`: a user-hosted MCP server that any agent connects to. The agent writes tools
   with `create_tool`; AutoTool verifies each one in a subprocess, mounts it live
   (`tools/list_changed`, plus `run_tool` for hosts that don't refresh) and keeps it in
