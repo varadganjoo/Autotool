@@ -59,10 +59,9 @@ def runtime_dotenv_names() -> list[str]:
 
 
 def _is_secret(name: str, value: str) -> bool:
-    # A heuristic. Values under 8 chars are never redacted so `AUTH_MODE=on` can't
-    # mangle output; odd-named secrets are caught by shape (long, no spaces, not a URL).
+    # Short passwords and keys are still secrets; AUTH_MODE=on is a setting.
     if len(value) < 8:
-        return False
+        return bool(_SECRET_NAME_RE.search(name)) and not name.upper().endswith("_MODE")
     if _SECRET_NAME_RE.search(name):
         return True
     return len(value) >= 16 and not any(c.isspace() for c in value) and "://" not in value
@@ -73,10 +72,15 @@ def _secret_pattern(value: str) -> re.Pattern[str]:
     (JSON ``\\/``), and spaces as ``+``. Covers keys echoed inside URLs and JSON bodies."""
     parts = []
     for ch in value:
-        if ch.isalnum():
+        if ch.isascii() and ch.isalnum():
             parts.append(re.escape(ch))
             continue
-        alts = [re.escape(ch), re.escape("\\" + ch), re.escape("".join(f"%{b:02X}" for b in ch.encode()))]
+        alts = [
+            re.escape(ch),
+            re.escape("\\" + ch),
+            re.escape("".join(f"%{b:02X}" for b in ch.encode())),
+            re.escape(json.dumps(ch)[1:-1]),
+        ]
         if ch == " ":
             alts.append(r"\+")
         parts.append("(?:" + "|".join(alts) + ")")
@@ -139,10 +143,13 @@ class ToolEnv:
         return {n: self._values[n] for n in required}
 
     def allowed_hosts(self, keys: Iterable[str]) -> list[str] | None:
-        """Hosts a tool holding ``keys`` may reach: the union of its restricted keys' allowlists,
-        or None (unrestricted) when none of its keys has one."""
-        keys = [k for k in keys if k in self.hosts]
-        return sorted({h for k in keys for h in self.hosts[k]}) if keys else None
+        """Hosts explicitly shared by all restricted keys; None when none is restricted.
+
+        Wildcard patterns must match exactly across lists. An empty intersection denies remote
+        access; split tools with disjoint credentials instead of widening either key's policy.
+        """
+        lists = [set(self.hosts[k]) for k in keys if k in self.hosts]
+        return sorted(set.intersection(*lists)) if lists else None
 
     def is_approved(self, tool: str, keys: Iterable[str], code: str) -> bool:
         """Keyless tools need no approval. Otherwise the user approved this tool for these keys, and
@@ -154,9 +161,11 @@ class ToolEnv:
         approval = self.approvals.get(tool)
         if not approval or not keys <= set(approval["keys"]):
             return False
+        hosts, approved = self.allowed_hosts(keys), approval.get("hosts")
+        if approved is not None and (not self.guard or hosts is None or not set(hosts) <= set(approved)):
+            return False  # widening access needs consent even when the code has not changed
         if approval["sha256"] == code_hash(code):
             return True
-        hosts, approved = self.allowed_hosts(keys), approval.get("hosts")
         return self.guard and hosts is not None and approved is not None and set(hosts) <= set(approved)
 
     def env_for(self, code: str, overrides: dict[str, str] | None = None, *, tool: str | None = None) -> dict[str, str]:

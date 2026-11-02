@@ -149,7 +149,8 @@ def test_policy_hosts_and_approvals_round_trip(tmp_path):
     assert policy["approvals"] == {"tavily_tool": {"keys": ["TAVILY_API_KEY"], "sha256": code_hash("print(1)\n"), "hosts": None}}
     set_hosts(tmp_path, "TAVILY_API_KEY", [])
     revoke(tmp_path, "tavily_tool")
-    assert load_policy(tmp_path) == {"hosts": {}, "approvals": {}}
+    policy = load_policy(tmp_path)
+    assert policy["hosts"] == {} and policy["approvals"] == {}
 
 
 def test_corrupt_policy_fails_closed_with_a_clear_message(tmp_path):
@@ -187,15 +188,20 @@ def test_allowlist_hosts_are_normalized():
     assert normalize_host("m\u00fcller.example") == "xn--mller-kva.example"
 
 
-def test_toolenv_restricts_egress_to_the_union_of_restricted_keys():
+def test_toolenv_never_widens_a_keys_allowlist_when_granting_another_key():
     env = ToolEnv(
         {"A_KEY": "a" * 20, "B_KEY": "b" * 20, "C_KEY": "c" * 20}, hosts={"A_KEY": ["a.example.com"], "B_KEY": ["b.example.com"]}
     )
     assert env.allowed_hosts(["C_KEY"]) is None  # no allowlist: unrestricted (opt-in feature)
     assert env.allowed_hosts(["A_KEY", "C_KEY"]) == ["a.example.com"]  # a restricted key restricts the tool
-    assert sorted(env.allowed_hosts(["A_KEY", "B_KEY"])) == ["a.example.com", "b.example.com"]
+    assert env.allowed_hosts(["A_KEY", "B_KEY"]) == []
     guard = json.loads(env.env_for('REQUIRED_ENV = ["A_KEY"]')["AUTOTOOL_GUARD"])
     assert guard["hosts"] == ["a.example.com"]
+
+
+def test_multiple_keys_keep_only_hosts_explicitly_shared_by_all_allowlists():
+    env = ToolEnv(hosts={"A_KEY": ["a.example.com", "shared.example.com"], "B_KEY": ["b.example.com", "shared.example.com"]})
+    assert env.allowed_hosts(["A_KEY", "B_KEY"]) == ["shared.example.com"]
 
 
 def test_toolenv_consent_is_bound_to_the_exact_code():
@@ -356,7 +362,7 @@ def test_approval_survives_rewrites_only_while_the_key_is_fenced_in():
     fenced = ToolEnv({"A_KEY": "a" * 20}, hosts={"A_KEY": ["a.example.com"]}, approvals={"t": approval})
     assert fenced.is_approved("t", ["A_KEY"], v2)  # same keys, same allowed hosts: no new prompt
     widened = ToolEnv({"A_KEY": "a" * 20}, hosts={"A_KEY": ["a.example.com", "b.example.com"]}, approvals={"t": approval})
-    assert not widened.is_approved("t", ["A_KEY"], v2) and widened.is_approved("t", ["A_KEY"], v1)
+    assert not widened.is_approved("t", ["A_KEY"], v2) and not widened.is_approved("t", ["A_KEY"], v1)
     open_key = ToolEnv({"A_KEY": "a" * 20}, approvals={"t": {**approval, "hosts": None}})
     assert not open_key.is_approved("t", ["A_KEY"], v2)  # no allowlist: a rewrite could send it anywhere
     no_guard = ToolEnv({"A_KEY": "a" * 20}, hosts={"A_KEY": ["a.example.com"]}, approvals={"t": approval}, guard=False)

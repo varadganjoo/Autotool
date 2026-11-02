@@ -34,6 +34,7 @@ class ToolRegistry:
         self.tools_dir.mkdir(parents=True, exist_ok=True)
         self.call_timeout_s = call_timeout_s
         self._clients: dict[str, DynamicMCPClient] = {}
+        self._redactors: dict[str, ToolEnv] = {}
         self._routes: dict[str, tuple[str, str]] = {}  # qualified name -> (server, tool)
         self._owners: dict[str, tuple[anyio.Event, anyio.Event]] = {}  # server -> (stop, done)
         self._locks: defaultdict[str, anyio.Lock] = defaultdict(anyio.Lock)  # one name mounts at a time
@@ -69,16 +70,26 @@ class ToolRegistry:
         if name in self._owners:
             await self.unmount(name)
         # Least privilege: the process gets only the .env variables this script declares.
-        env = self.tool_env.env_for(path.read_text(encoding="utf-8"), self.env_overrides, tool=name)
+        code = path.read_text(encoding="utf-8")
+        tool_env = self.tool_env
+        env = tool_env.env_for(code, self.env_overrides, tool=name)
         client = DynamicMCPClient(
-            path, server_name=name, env=env, call_timeout_s=self.call_timeout_s, connect_timeout_s=self.mount_timeout_s
+            path, server_name=name, env=env, call_timeout_s=self.call_timeout_s, connect_timeout_s=self.mount_timeout_s, code=code
         )
         # Schemas and descriptions go to the LLM every turn; a parameter default read from the
         # environment would put a secret there.
         raw = await self._tg.start(self._own, client)
-        tools = [MCPToolDescriptor.model_validate(self.tool_env.redact_json(t.model_dump())) for t in raw]
+        try:
+            tools = [MCPToolDescriptor.model_validate(tool_env.redact_json(t.model_dump())) for t in raw]
+            names = [t.qualified_name for t in tools]
+            if len(set(names)) != len(names) or any(n in self._routes for n in names):
+                raise ValueError(f"Tool server {name!r} exposes duplicate qualified tool names")
+        except Exception:
+            await self.unmount(name)
+            raise
         client.tools = tools
         self._clients[name] = client
+        self._redactors[name] = tool_env
         for tool in tools:
             self._routes[tool.qualified_name] = (name, tool.name)
         log.info("Mounted %s with tools: %s", name, [t.name for t in tools])
@@ -99,12 +110,29 @@ class ToolRegistry:
 
     async def unmount(self, server: str) -> None:
         self._clients.pop(server, None)
+        self._redactors.pop(server, None)
         self._routes = {q: r for q, r in self._routes.items() if r[0] != server}
         owner = self._owners.pop(server, None)
         if owner is not None:
             stop, done = owner
             stop.set()
             await done.wait()
+
+    async def reconcile(self) -> None:
+        """Drop revoked/deleted tools and restart processes whose code or granted environment changed."""
+        for name in list(self._clients):
+            async with self._locks[name]:
+                client = self._clients.get(name)
+                if client is None:
+                    continue
+                try:
+                    code = client.script_path.read_text(encoding="utf-8")
+                    env = self.tool_env.env_for(code, self.env_overrides, tool=name)
+                    if code != client.code or env != client.env:
+                        await self._mount(client.script_path)
+                except Exception as exc:
+                    await self.unmount(name)
+                    log.warning("Dropping tool %s after a policy or cache change: %s", name, self.tool_env.redact(str(exc)))
 
     async def close(self) -> None:
         for server in list(self._owners):
@@ -142,13 +170,14 @@ class ToolRegistry:
             return ToolResult(call_id=call_id, content=f"Unknown tool '{qualified_name}'", is_error=True)
         server, tool = route
         client = self._clients[server]
+        tool_env = self._redactors[server]  # redact with the credentials this particular process received
         try:
             result = await client.call_tool(tool, arguments)
         except Exception as exc:
             return ToolResult(
-                call_id=call_id, content=self.tool_env.redact(f"Tool call failed: {type(exc).__name__}: {exc}"), is_error=True
+                call_id=call_id, content=tool_env.redact(f"Tool call failed: {type(exc).__name__}: {exc}"), is_error=True
             )
-        content = self.tool_env.redact(render_call_result(result) or "(empty result)")
+        content = tool_env.redact(render_call_result(result) or "(empty result)")
         return ToolResult(call_id=call_id, content=content, is_error=bool(result.is_error))
 
     async def __aenter__(self) -> ToolRegistry:

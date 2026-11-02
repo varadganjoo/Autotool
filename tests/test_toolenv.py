@@ -83,6 +83,24 @@ def test_redact_longest_first():
     assert tool_env.redact("abcdefgh1234-extended") == "[REDACTED:B_TOKEN]"
 
 
+def test_short_named_secrets_are_redacted():
+    tool_env = ToolEnv({"SERVICE_PASSWORD": "s3cr3t", "AUTH_MODE": "on"})
+    assert tool_env.redact("password=s3cr3t") == "password=[REDACTED:SERVICE_PASSWORD]"
+
+
+def test_unicode_and_control_characters_in_secrets_are_redacted_in_json():
+    password = "p\u00e4ssw\u00f6rd\t123"
+    tool_env = ToolEnv({"PASSWORD": password})
+    assert tool_env.redact_json({"value": password}) == {"value": "[REDACTED:PASSWORD]"}
+    assert tool_env.redact(json.dumps({"value": password})) == '{"value": "[REDACTED:PASSWORD]"}'
+
+
+async def test_verifier_redacts_static_failures(tmp_path):
+    report = await ToolVerifier(tmp_path, tool_env=env()).verify("bad_tool", f'key = "{ALPHA}" ???')
+    assert not report.ok and report.stage == "static"
+    assert ALPHA not in report.model_dump_json()
+
+
 # ---------------------------------------------------------------- REQUIRED_ENV
 
 
@@ -261,6 +279,16 @@ async def test_registry_redacts_tool_output(tmp_path):
     assert result.content == "key=[REDACTED:ALPHA_API_KEY]"
 
 
+async def test_in_flight_client_keeps_its_original_redactor_after_key_rotation(tmp_path):
+    script = tmp_path / "echo_tool.py"
+    script.write_text(ECHO)
+    async with ToolRegistry(tmp_path, tool_env=env()) as registry:
+        await registry.mount(script)
+        registry.tool_env = ToolEnv({"ALPHA_API_KEY": "new-secret-0123456789"})
+        result = await registry.call("1", "echo_tool__echo", {})
+    assert result.content == "key=[REDACTED:ALPHA_API_KEY]"
+
+
 SECRET_DEFAULT = server(
     '''
     import os
@@ -307,6 +335,16 @@ async def test_verifier_redacts_before_truncating_smoke_output(tmp_path):
     )
     assert report.ok, report.failure_summary()
     assert ALPHA[:10] not in report.smoke_output
+
+
+async def test_verifier_redacts_secret_defaults_and_smoke_arguments(tmp_path):
+    code = SECRET_DEFAULT.replace("return query", 'raise ValueError("failed")')
+    report = await ToolVerifier(tmp_path / "stg", tool_env=env()).verify(
+        "default_tool", code, primary_tool="search", smoke_arguments={"query": ALPHA}
+    )
+    assert not report.ok and report.stage == "smoke_test"
+    assert ALPHA not in report.model_dump_json()
+    assert report.smoke_arguments == {"query": "[REDACTED:ALPHA_API_KEY]"}
 
 
 def test_env_for_strips_every_dotenv_name_even_unoffered_ones(monkeypatch):

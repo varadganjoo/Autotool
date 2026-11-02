@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.1.1 — shared-host reliability and security
+
+- Fix `autotool tools list` crashing before it could inspect the tool cache.
+- Serialize and atomically write the credential-name index so concurrent key commands do not
+  corrupt it or lose entries.
+- Execute the exact source approved for a tool's credentials in a private scratch directory;
+  concurrent replacements of the shared cache cannot swap the executed code.
+- Redact short named secrets, Unicode/JSON-escaped secrets, complete verifier reports and static
+  failures. Keep each process's original redactor across credential rotation.
+- Intersect restricted keys' host patterns instead of widening them. Widened access needs fresh
+  consent even when source code is unchanged.
+- Refresh credential names and reconcile mounted tools on list/call requests. Revoked approvals,
+  removed keys and deleted tools stop being used on the next request; in-flight calls may finish.
+- Protect modern consent continuations with the SDK's authenticated request state and a policy
+  revision. Model-assisted synthesis now prompts on modern hosts and resumes repair without
+  regenerating the approved candidate.
+- Give long tool names stable hash suffixes, reject invalid/colliding names, and close processes
+  if descriptor processing fails.
+- Gate publishing on the cross-platform tests, lint, dependency audit and secret scan. Verify
+  release tags against package metadata and pin publishing actions to resolved commit IDs.
+
+Compatibility: short valid tool names stay unchanged. Long names acquire a stable suffix.
+Tools using multiple restricted keys need common host patterns. Each tool's working directory
+is now its own scratch directory. Existing policy files remain readable; policy writes add a
+`revision` field. AutoTool remains a single-user tool layer with an in-process guard, not an OS jail.
+
 ## 0.1.0 — first public release
 
 - Python API: `autotool.run_agent(prompt, provider)` is a complete agent that writes the tools it
