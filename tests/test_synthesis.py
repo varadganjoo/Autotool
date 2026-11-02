@@ -13,7 +13,8 @@ from autotool.clients.dynamic_client import DynamicMCPClient, sandbox_env
 from autotool.core.llm import ScriptedProvider
 from autotool.core.orchestrator import SYNTHESIZE_TOOL, Orchestrator
 from autotool.core.registry import ToolRegistry
-from autotool.core.schema import CapabilityRequest, GeneratedToolCandidate, LLMTurn, ToolCall
+from autotool.core.schema import CapabilityRequest, GeneratedToolCandidate, LLMTurn, MCPToolDescriptor, ToolCall
+from autotool.core.toolenv import ToolEnv
 from autotool.synthesis.generator import clean_code
 from autotool.synthesis.repair import SynthesisEngine, SynthesisError
 from autotool.synthesis.verifier import ToolVerifier, mock_arguments, static_check
@@ -114,6 +115,19 @@ def test_capability_request_normalizes_name():
     assert CapabilityRequest(tool_name="HackerNews", capability_description="x").tool_name == "hackernews_tool"
     with pytest.raises(ValueError):
         CapabilityRequest(tool_name="../evil", capability_description="x")
+
+
+def test_long_tool_names_do_not_collide():
+    first = MCPToolDescriptor(server="a" * 36 + "_tool", name="x" * 21 + "read")
+    second = MCPToolDescriptor(server=first.server, name="x" * 21 + "write")
+    assert first.qualified_name != second.qualified_name
+    assert len(first.qualified_name) <= 64 and len(second.qualified_name) <= 64
+
+
+@pytest.mark.parametrize("field", ["server", "name"])
+def test_invalid_function_names_are_rejected(field):
+    with pytest.raises(ValueError, match="name"):
+        MCPToolDescriptor(**{"server": "math_tool", "name": "add", field: "bad.name"})
 
 
 def test_sandbox_env_strips_secrets(monkeypatch):
@@ -224,6 +238,25 @@ async def test_dynamic_client_formats_schemas_and_calls(tmp_path):
         result = await client.call_tool("add", {"a": 40, "b": 2})
         assert result.content[0].text == "42"
     assert not client.connected
+
+
+async def test_dynamic_client_runs_the_captured_code_in_a_private_scratch_directory(tmp_path):
+    script = tmp_path / "math_tool.py"
+    script.write_text(GOOD.replace("a + b", "a * b"))
+    env = ToolEnv().env_for(GOOD)
+    async with DynamicMCPClient(script, env=env, code=GOOD) as client:
+        result = await client.call_tool("add", {"a": 2, "b": 3})
+    assert result.content[0].text == "5"  # the mutable cache file would return 6
+    assert script.read_text() != GOOD  # execution did not rewrite the user's cache
+
+
+async def test_failed_descriptor_redaction_does_not_leave_a_live_process(tmp_path):
+    script = tmp_path / "math_tool.py"
+    script.write_text(GOOD)
+    async with ToolRegistry(tmp_path, tool_env=ToolEnv({"PASSWORD": "add"})) as registry:
+        with pytest.raises(ValueError, match="name"):
+            await registry.mount(script)
+        assert not registry._owners and not registry.servers
 
 
 async def test_registry_hot_loads_and_routes(tmp_path):

@@ -15,12 +15,15 @@ import contextlib
 import hashlib
 import json
 import os
+import secrets
 import tempfile
 import time
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
+
+_ANY_REVISION = object()
 
 
 def code_hash(code: str) -> str:
@@ -114,6 +117,7 @@ def _locked(home: Path) -> Iterator[None]:
 
 
 def _save(home: Path, policy: dict[str, Any]) -> None:
+    policy["revision"] = secrets.token_hex(16)  # invalidate old approval continuations, including after revocation
     fd, tmp = tempfile.mkstemp(dir=home, prefix=".policy-", suffix=".tmp")
     with open(fd, "w", encoding="utf-8") as f:
         json.dump(policy, f, indent=2, sort_keys=True)
@@ -141,10 +145,24 @@ def set_hosts(home: Path, name: str, hosts: Iterable[str]) -> list[str]:
     return normalized
 
 
-def approve(home: Path, tool: str, keys: Iterable[str], code: str, hosts: Iterable[str] | None = None) -> None:
-    """``hosts``: where the keys were limited to when the user approved (None: unrestricted)."""
+def approve(
+    home: Path,
+    tool: str,
+    keys: Iterable[str],
+    code: str,
+    hosts: Iterable[str] | None = None,
+    *,
+    expected_revision: Any = _ANY_REVISION,
+) -> bool:
+    """Save consent; an explicit expected revision (including None) rejects stale continuations."""
     approval = {"keys": sorted(set(keys)), "sha256": code_hash(code), "hosts": sorted(hosts) if hosts is not None else None}
-    _update(home, lambda policy: policy["approvals"].__setitem__(tool, approval))
+    with _locked(home):
+        policy = load_policy(home)
+        if expected_revision is not _ANY_REVISION and policy.get("revision") != expected_revision:
+            return False
+        policy["approvals"][tool] = approval
+        _save(home, policy)
+    return True
 
 
 def revoke(home: Path, tool: str) -> None:

@@ -21,6 +21,7 @@ from typing import Any
 from dotenv import dotenv_values
 from mcp import types
 from mcp.server.lowlevel import NotificationOptions, Server
+from mcp.server.request_state import RequestStateBoundary, RequestStateSecurity
 from mcp.server.stdio import stdio_server
 from mcp.server.subscriptions import InMemorySubscriptionBus, ListenHandler, ToolsListChanged
 from pydantic import ValidationError
@@ -35,9 +36,9 @@ from autotool.core.llm import (
     OpenAICompatibleProvider,
     OpenAIProvider,
 )
-from autotool.core.policy import approve, code_hash
+from autotool.core.policy import approve, code_hash, load_policy
 from autotool.core.registry import ToolRegistry
-from autotool.core.schema import CapabilityRequest
+from autotool.core.schema import CapabilityRequest, GeneratedToolCandidate
 from autotool.core.toolenv import required_env
 from autotool.synthesis.generator import TEMPLATE, TOOL_CONTRACT, env_section
 from autotool.synthesis.repair import SynthesisEngine, SynthesisError, promote
@@ -91,6 +92,7 @@ class AutoToolServer:
             on_call_tool=self._on_call_tool,
             on_subscriptions_listen=ListenHandler(self.bus),
         )
+        self.server.middleware.append(RequestStateBoundary(RequestStateSecurity.ephemeral(), default_audience="autotool"))
 
     def refresh_env(self) -> None:
         """Re-read every credential source so keys added since startup work without a restart."""
@@ -106,15 +108,24 @@ class AutoToolServer:
         reach = (
             f"It can only send them to {', '.join(hosts)}. Future versions won't ask again unless they need more."
             if hosts
+            else "Its credentials have no shared allowed remote hosts; only loopback is reachable."
+            if hosts == []
             else "It can send them to any host, so every new version will ask again (limit a key with `autotool keys allow`)."
         )
         return f"AutoTool: allow the tool '{tool}' (code {code_hash(code)[:12]}) to use {', '.join(keys)}? {reach}"
 
-    def _record_consent(self, result: types.ElicitResult, tool: str, keys: list[str], code: str) -> bool:
+    def _record_consent(self, result: types.ElicitResult, tool: str, keys: list[str], code: str, revision: str | None) -> bool:
         if result.action == "accept" and (result.content or {}).get("allow") is True:
-            approve(self.home, tool, keys, code, self.tool_env.allowed_hosts(keys) if self.sandbox else None)
+            approved = approve(
+                self.home,
+                tool,
+                keys,
+                code,
+                self.tool_env.allowed_hosts(keys) if self.sandbox else None,
+                expected_revision=revision,
+            )
             self.refresh_env()
-            return True
+            return approved
         return False
 
     async def ask_consent(self, tool: str, keys: list[str], code: str) -> bool:
@@ -122,12 +133,43 @@ class AutoToolServer:
         ctx = _ctx.get(None)
         if ctx is None or _modern(ctx) or not _can_prompt(ctx):
             return False  # modern connections were already asked, through InputRequiredResult
+        revision = load_policy(self.home).get("revision")
         result = await ctx.session.elicit_form(
             message=self._consent_message(tool, keys, code),
             requested_schema=_CONSENT_SCHEMA,
             related_request_id=ctx.request_id,
         )
-        return self._record_consent(result, tool, keys, code)
+        self.refresh_env()
+        return self._record_consent(result, tool, keys, code, revision)
+
+    def _modern_consent(
+        self, tool: str, code: str, responses: dict[str, Any] | None, state: str | None
+    ) -> types.InputRequiredResult | bool:
+        ctx = _ctx.get(None)
+        if self.consent != "prompt" or ctx is None or not _modern(ctx) or not _can_prompt(ctx):
+            return True  # the verifier handles legacy prompts and hosts without elicitation
+        try:
+            keys = [n for n in required_env(code) if n in self.tool_env.names]
+        except (ValueError, SyntaxError):
+            return True  # the verifier reports invalid code
+        if not keys or self.tool_env.is_approved(tool, keys, code):
+            return True
+        policy_state = {
+            "hosts": self.tool_env.allowed_hosts(keys) if self.sandbox else None,
+            "revision": load_policy(self.home).get("revision"),
+        }
+        previous = json.loads(state) if state else {}
+        answer = (
+            (responses or {}).get("consent") if state and all(previous.get(k) == v for k, v in policy_state.items()) else None
+        )
+        if answer is not None:
+            return isinstance(answer, types.ElicitResult) and self._record_consent(
+                answer, tool, keys, code, previous.get("revision")
+            )
+        form = types.ElicitRequestFormParams(message=self._consent_message(tool, keys, code), requested_schema=_CONSENT_SCHEMA)
+        return types.InputRequiredResult(
+            input_requests={"consent": types.ElicitRequest(params=form)}, request_state=json.dumps(policy_state)
+        )
 
     # ---- tool list ------------------------------------------------------
 
@@ -180,6 +222,8 @@ class AutoToolServer:
         return tools
 
     async def list_tools(self) -> list[types.Tool]:
+        self.refresh_env()
+        await self.registry.reconcile()
         mounted = [
             types.Tool(name=d.qualified_name, description=d.description or d.name, input_schema=d.input_schema)
             for d in self.registry.descriptors()
@@ -194,42 +238,34 @@ class AutoToolServer:
     async def _on_call_tool(self, ctx: Any, params: types.CallToolRequestParams) -> Any:
         token = _ctx.set(ctx)
         try:
-            return await self.call_tool(params.name, params.arguments or {}, params.input_responses)
+            return await self.call_tool(params.name, params.arguments or {}, params.input_responses, params.request_state)
         finally:
             _ctx.reset(token)
 
-    async def call_tool(self, name: str, arguments: dict[str, Any], responses: dict[str, Any] | None = None) -> Any:
+    async def call_tool(
+        self, name: str, arguments: dict[str, Any], responses: dict[str, Any] | None = None, state: str | None = None
+    ) -> Any:
+        self.refresh_env()
+        await self.registry.reconcile()
         if name == CREATE_TOOL:
-            return await self.create_tool(arguments, responses)
+            return await self.create_tool(arguments, responses, state)
         if name == SYNTHESIZE_TOOL and self.engine:
-            return await self.synthesize_tool(arguments)
+            return await self.synthesize_tool(arguments, responses, state)
         if name == RUN_TOOL:
             name, arguments = str(arguments.get("name", "")), arguments.get("arguments") or {}
         result = await self.registry.call("call", name, arguments)
         return _result(result.content, result.is_error)
 
-    async def create_tool(self, args: dict[str, Any], responses: dict[str, Any] | None = None) -> Any:
+    async def create_tool(self, args: dict[str, Any], responses: dict[str, Any] | None = None, state: str | None = None) -> Any:
         try:
             tool_name = CapabilityRequest(tool_name=str(args.get("name", "")), capability_description="-").tool_name
         except ValidationError as exc:
             return _result(f"Invalid tool name: {exc.errors()[0]['msg']}", is_error=True)
         code = str(args.get("code", ""))
         self.refresh_env()
-        ctx = _ctx.get(None)
-        if self.consent == "prompt" and ctx is not None and _modern(ctx) and _can_prompt(ctx):
-            try:
-                keys = [n for n in required_env(code) if n in self.tool_env.names]
-            except (ValueError, SyntaxError):
-                keys = []  # the verifier reports the syntax error
-            if keys and not self.tool_env.is_approved(tool_name, keys, code):
-                answer = (responses or {}).get("consent")
-                if answer is None:  # ask; the client retries this call with the answer in input_responses
-                    form = types.ElicitRequestFormParams(
-                        message=self._consent_message(tool_name, keys, code), requested_schema=_CONSENT_SCHEMA
-                    )
-                    return types.InputRequiredResult(input_requests={"consent": types.ElicitRequest(params=form)})
-                if isinstance(answer, types.ElicitResult):
-                    self._record_consent(answer, tool_name, keys, code)
+        consent = self._modern_consent(tool_name, code, responses, state)
+        if isinstance(consent, types.InputRequiredResult):
+            return consent
         report = await self.verifier.verify(
             tool_name, code, primary_tool=args.get("test_tool"), smoke_arguments=args.get("test_arguments")
         )
@@ -243,16 +279,39 @@ class AutoToolServer:
         (self.verifier.staging_dir / "pending" / f"{tool_name}.py").unlink(missing_ok=True)
         return await self._mount(path, f"verified (smoke test {report.smoke_tool} passed)")
 
-    async def synthesize_tool(self, args: dict[str, Any]) -> types.CallToolResult:
+    async def synthesize_tool(
+        self, args: dict[str, Any], responses: dict[str, Any] | None = None, state: str | None = None
+    ) -> Any:
         try:
             request = CapabilityRequest.model_validate(args)
         except ValidationError as exc:
             return _result(f"Invalid synthesize_tool arguments: {exc}", is_error=True)
         self.refresh_env()
+        pending = json.loads(state).get("synthesis") if state else None
+        candidate, attempts = None, 0
+        if pending:
+            candidate = GeneratedToolCandidate.model_validate(pending["candidate"])
+            consent = self._modern_consent(request.tool_name, candidate.code, responses, state)
+            if isinstance(consent, types.InputRequiredResult):
+                consent.request_state = json.dumps({**json.loads(consent.request_state), "synthesis": pending})
+                return consent
+            if not consent:
+                return _result("The user declined credential access; synthesis stopped.", is_error=True)
+            attempts = pending["attempts"] - 1  # the approval round did not execute the smoke test
         try:
-            result = await self.engine.build_tool(request)
+            result = await self.engine.build_tool(request, candidate=candidate, attempts=attempts)
         except SynthesisError as exc:
+            consent = self._modern_consent(request.tool_name, exc.candidate.code, None, None) if exc.candidate else None
+            if exc.report.stage == "consent" and isinstance(consent, types.InputRequiredResult):
+                consent.request_state = json.dumps(
+                    {
+                        **json.loads(consent.request_state),
+                        "synthesis": {"candidate": exc.candidate.model_dump(), "attempts": exc.attempts},
+                    }
+                )
+                return consent
             return _result(self._failure(str(exc), []), is_error=True)
+        (self.verifier.staging_dir / "pending" / f"{request.tool_name}.py").unlink(missing_ok=True)
         return await self._mount(Path(result.path), f"synthesized and verified in {result.attempts} attempt(s)")
 
     async def _mount(self, path: Path, origin: str) -> types.CallToolResult:

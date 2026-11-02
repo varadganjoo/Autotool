@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import re
+import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -22,7 +23,7 @@ import keyring
 from dotenv import dotenv_values
 from keyring.errors import KeyringError, PasswordDeleteError
 
-from autotool.core.policy import load_policy
+from autotool.core.policy import _locked, _retry_windows_sharing, load_policy
 from autotool.core.toolenv import ToolEnv, runtime_dotenv_names, runtime_dotenv_path
 
 log = logging.getLogger(__name__)
@@ -43,29 +44,37 @@ def _index(home: Path) -> Path:
 
 def keychain_names(home: Path) -> list[str]:
     try:
-        return sorted(json.loads(_index(home).read_text(encoding="utf-8")))
+        return sorted(json.loads(_retry_windows_sharing(lambda: _index(home).read_text(encoding="utf-8"))))
     except FileNotFoundError:
         return []
 
 
 def _write_index(home: Path, names: set[str]) -> None:
     home.mkdir(parents=True, exist_ok=True)
-    _index(home).write_text(json.dumps(sorted(names)), encoding="utf-8")
+    fd, tmp = tempfile.mkstemp(dir=home, prefix=".keys-", suffix=".tmp")
+    try:
+        with open(fd, "w", encoding="utf-8") as f:
+            json.dump(sorted(names), f)
+        _retry_windows_sharing(lambda: os.replace(tmp, _index(home)))
+    finally:
+        Path(tmp).unlink(missing_ok=True)
 
 
 def keychain_set(home: Path, name: str, value: str) -> None:
     if not _NAME_RE.match(name):
         raise ValueError(f"{name!r} is not a valid environment variable name (letters, digits, _; not starting with a digit)")
-    keyring.set_password(KEYRING_SERVICE, name, value)
-    _write_index(home, set(keychain_names(home)) | {name})
+    with _locked(home):
+        keyring.set_password(KEYRING_SERVICE, name, value)
+        _write_index(home, set(keychain_names(home)) | {name})
 
 
 def keychain_delete(home: Path, name: str) -> None:
-    try:
-        keyring.delete_password(KEYRING_SERVICE, name)
-    except PasswordDeleteError:
-        pass
-    _write_index(home, set(keychain_names(home)) - {name})
+    with _locked(home):
+        try:
+            keyring.delete_password(KEYRING_SERVICE, name)
+        except PasswordDeleteError:
+            pass
+        _write_index(home, set(keychain_names(home)) - {name})
 
 
 def load_tool_env(

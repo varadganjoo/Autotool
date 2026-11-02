@@ -95,10 +95,12 @@ class DynamicMCPClient:
         call_timeout_s: float = 30.0,
         errlog: TextIO | None = None,
         connect_timeout_s: float | None = None,
+        code: str | None = None,
     ) -> None:
         self.script_path = Path(script_path).resolve()
         self.server_name = server_name or self.script_path.stem
         self.env = env
+        self.code = code
         self.call_timeout = call_timeout_s
         # Bounds initialize/list_tools; tool calls pass their own timeout.
         self.connect_timeout = connect_timeout_s
@@ -124,11 +126,24 @@ class DynamicMCPClient:
         env = self.env if self.env is not None else sandbox_env()
         # Every tool runs through autotool.guard: it sends tracebacks to stderr and, when the env
         # carries AUTOTOOL_GUARD, installs the guard. PYTHONPATH lets `-m` find autotool.
-        args = ["-m", "autotool.guard", str(self.script_path)]
-        env = {**env, "PYTHONPATH": str(Path(__file__).resolve().parents[2])}
-        params = StdioServerParameters(command=sys.executable, args=args, env=env, cwd=str(self.script_path.parent))
         stack = AsyncExitStack()
         try:
+            # Execute the exact code approved for this environment, even when another host replaces
+            # the shared cache file while this process starts. Each tool owns its scratch files.
+            scratch = stack.enter_context(tempfile.TemporaryDirectory(prefix="autotool-"))
+            snapshot = Path(scratch) / self.script_path.name
+            snapshot.write_text(
+                self.code if self.code is not None else self.script_path.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+            args = ["-m", "autotool.guard", str(snapshot)]
+            env = {
+                **env,
+                "PYTHONPATH": str(Path(__file__).resolve().parents[2]),
+                "TMPDIR": scratch,
+                "TEMP": scratch,
+                "TMP": scratch,
+            }
+            params = StdioServerParameters(command=sys.executable, args=args, env=env, cwd=scratch)
             # stderr goes to a real file so it can be surfaced on failure.
             if self._external_errlog is None:
                 self._errlog = stack.enter_context(

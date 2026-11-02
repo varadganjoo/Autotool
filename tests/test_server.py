@@ -245,6 +245,36 @@ async def test_unapproved_cached_tool_is_not_mounted(tmp_path, monkeypatch):
         assert server.registry.has_server("acme_tool")
 
 
+@pytest.mark.parametrize("change", ["revoke", "remove-key", "remove-tool"])
+async def test_running_server_stops_using_revoked_credentials_and_removed_tools(tmp_path, monkeypatch, change):
+    from autotool.core.policy import revoke
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".env").write_text("REVIEW_API_KEY=dummy-value-0123456789\n")
+    code = GOOD.replace("mcp = MCPServer", 'REQUIRED_ENV = ["REVIEW_API_KEY"]\nmcp = MCPServer')
+    async with in_memory(home, True, [], consent="prompt") as (server, client):
+        assert not (await client.call_tool("create_tool", {"name": "math_tool", "code": code})).is_error
+        if change == "revoke":
+            revoke(home, "math_tool")
+        elif change == "remove-key":
+            (home / ".env").write_text("")
+        else:
+            (home / "tools" / "math_tool.py").unlink()
+        result = await client.call_tool("run_tool", {"name": "math_tool__add", "arguments": {"a": 1, "b": 2}})
+        assert result.is_error
+        assert not server.registry.has_server("math_tool")
+
+
+async def test_list_tools_refreshes_credential_names_without_a_restart(tmp_path):
+    from autotool.server import AutoToolServer
+
+    server = AutoToolServer(tmp_path)
+    assert "NEW_API_KEY" not in (await server.list_tools())[0].description
+    (tmp_path / ".env").write_text("NEW_API_KEY=dummy-value-0123456789\n")
+    assert "NEW_API_KEY" in (await server.list_tools())[0].description
+
+
 async def test_host_allowlist_blocks_a_tool_sending_its_key_elsewhere(tmp_path, bearer_api, monkeypatch):
     from autotool.core.policy import set_hosts
 
@@ -317,6 +347,102 @@ async def test_declined_consent_stops_synthesis_immediately(tmp_path):
     with pytest.raises(SynthesisError) as exc:
         await engine.build_tool(CapabilityRequest(tool_name="acme_tool", capability_description="x"))
     assert exc.value.report.stage == "consent" and len(calls) == 1
+
+
+@pytest.mark.parametrize("answer", [True, False])
+async def test_synthesis_prompts_in_both_protocols_without_regenerating(tmp_path, monkeypatch, mode, answer):
+    from autotool.core.llm import ScriptedProvider
+    from autotool.core.schema import GeneratedToolCandidate, LLMTurn
+
+    monkeypatch.setenv("AUTOTOOL_KEY_REVIEW_API_KEY", "dummy-value-0123456789")
+    generated = []
+    code = GOOD.replace("mcp = MCPServer", 'REQUIRED_ENV = ["REVIEW_API_KEY"]\nmcp = MCPServer')
+
+    def generate(prompt, model):
+        generated.append(prompt)
+        return GeneratedToolCandidate(code=code, primary_tool="add", smoke_test_arguments_json='{"a": 2, "b": 3}')
+
+    prompts = []
+    provider = ScriptedProvider(lambda m, t: LLMTurn(text=""), generate)
+    async with in_memory(tmp_path, answer, prompts, mode=mode, provider=provider) as (server, client):
+        result = await client.call_tool("synthesize_tool", {"tool_name": "math_tool", "capability_description": "add"})
+        assert bool(result.is_error) == (not answer), text(result)
+        assert server.registry.has_server("math_tool") == answer
+    assert len(prompts) == 1 and len(generated) == 1
+
+
+async def test_modern_consent_response_without_server_state_does_not_approve(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUTOTOOL_KEY_REVIEW_API_KEY", "dummy-value-0123456789")
+    code = GOOD.replace("mcp = MCPServer", 'REQUIRED_ENV = ["REVIEW_API_KEY"]\nmcp = MCPServer')
+    async with in_memory(tmp_path, False, [], mode="auto") as (server, client):
+        result = await client.call_tool(
+            "create_tool",
+            {"name": "math_tool", "code": code},
+            input_responses={"consent": types.ElicitResult(action="accept", content={"allow": True})},
+        )
+        assert result.is_error
+        assert not server.registry.has_server("math_tool")
+
+
+async def test_modern_synthesis_repairs_after_approval(tmp_path, monkeypatch):
+    from autotool.core.llm import ScriptedProvider
+    from autotool.core.schema import GeneratedToolCandidate, LLMTurn
+    from tests.test_synthesis import CRASHES
+
+    monkeypatch.setenv("AUTOTOOL_KEY_REVIEW_API_KEY", "dummy-value-0123456789")
+    drafts = iter([CRASHES, GOOD])
+    generated = []
+
+    def generate(prompt, model):
+        generated.append(prompt)
+        code = next(drafts).replace("mcp = MCPServer", 'REQUIRED_ENV = ["REVIEW_API_KEY"]\nmcp = MCPServer')
+        return GeneratedToolCandidate(code=code, primary_tool="add", smoke_test_arguments_json='{"a": 2, "b": 3}')
+
+    prompts = []
+    provider = ScriptedProvider(lambda m, t: LLMTurn(text=""), generate)
+    async with in_memory(tmp_path, True, prompts, mode="auto", provider=provider) as (server, client):
+        result = await client.call_tool("synthesize_tool", {"tool_name": "math_tool", "capability_description": "add"})
+        assert not result.is_error, text(result)
+        assert server.registry.has_server("math_tool")
+    assert len(generated) == 2 and len(prompts) == 2
+
+
+async def test_revocation_invalidates_an_old_consent_continuation(tmp_path, monkeypatch):
+    from autotool.core.policy import revoke
+
+    monkeypatch.setenv("AUTOTOOL_KEY_REVIEW_API_KEY", "dummy-value-0123456789")
+    code = GOOD.replace("mcp = MCPServer", 'REQUIRED_ENV = ["REVIEW_API_KEY"]\nmcp = MCPServer')
+    args = {"name": "math_tool", "code": code}
+    answer = {"consent": types.ElicitResult(action="accept", content={"allow": True})}
+    async with in_memory(tmp_path, True, [], mode="auto") as (server, client):
+        request = await client.session.call_tool("create_tool", args, allow_input_required=True)
+        assert isinstance(request, types.InputRequiredResult)
+        assert not (
+            await client.call_tool("create_tool", args, input_responses=answer, request_state=request.request_state)
+        ).is_error
+        revoke(tmp_path, "math_tool")
+        replay = await client.session.call_tool(
+            "create_tool", args, input_responses=answer, request_state=request.request_state, allow_input_required=True
+        )
+        assert isinstance(replay, types.InputRequiredResult)
+        assert not server.registry.has_server("math_tool")
+
+
+async def test_revocation_between_consent_validation_and_save_wins(tmp_path, monkeypatch):
+    import autotool.server as server_module
+    from autotool.core.policy import approve, revoke
+
+    def concurrent_revoke(*args, **kwargs):
+        revoke(args[0], args[1])
+        return approve(*args, **kwargs)
+
+    monkeypatch.setattr(server_module, "approve", concurrent_revoke)
+    monkeypatch.setenv("AUTOTOOL_KEY_REVIEW_API_KEY", "dummy-value-0123456789")
+    code = GOOD.replace("mcp = MCPServer", 'REQUIRED_ENV = ["REVIEW_API_KEY"]\nmcp = MCPServer')
+    async with in_memory(tmp_path, True, [], mode="auto") as (server, client):
+        result = await client.call_tool("create_tool", {"name": "math_tool", "code": code})
+        assert result.is_error
+        assert not server.registry.has_server("math_tool")
 
 
 async def test_rewrites_of_a_fenced_tool_do_not_prompt_again(tmp_path, bearer_api, monkeypatch, mode):

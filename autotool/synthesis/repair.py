@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 from autotool.core.llm import LLMProvider
-from autotool.core.schema import CapabilityRequest, SynthesisResult, VerificationReport
+from autotool.core.schema import CapabilityRequest, GeneratedToolCandidate, SynthesisResult, VerificationReport
 from autotool.synthesis.generator import ToolGenerator
 from autotool.synthesis.verifier import ToolVerifier
 
@@ -16,11 +16,14 @@ log = logging.getLogger(__name__)
 
 
 class SynthesisError(RuntimeError):
-    def __init__(self, tool_name: str, attempts: int, report: VerificationReport) -> None:
+    def __init__(
+        self, tool_name: str, attempts: int, report: VerificationReport, candidate: GeneratedToolCandidate | None = None
+    ) -> None:
         super().__init__(f"Could not synthesize '{tool_name}' after {attempts} attempt(s). {report.failure_summary(1500)}")
         self.tool_name = tool_name
         self.attempts = attempts
         self.report = report
+        self.candidate = candidate
 
 
 class SynthesisEngine:
@@ -40,12 +43,18 @@ class SynthesisEngine:
     def cached_path(self, tool_name: str) -> Path:
         return self.tools_dir / f"{tool_name}.py"
 
-    async def build_tool(self, request: CapabilityRequest | str, *, tool_name: str | None = None) -> SynthesisResult:
+    async def build_tool(
+        self,
+        request: CapabilityRequest | str,
+        *,
+        tool_name: str | None = None,
+        candidate: GeneratedToolCandidate | None = None,
+        attempts: int = 0,
+    ) -> SynthesisResult:
         if isinstance(request, str):
             request = CapabilityRequest(tool_name=tool_name or "custom_tool", capability_description=request)
 
-        candidate = await self.generator.generate(request)
-        attempts = 0
+        candidate = candidate or await self.generator.generate(request)
         while True:
             attempts += 1
             report = await self.verifier.verify(
@@ -60,7 +69,7 @@ class SynthesisEngine:
                 return SynthesisResult(tool_name=request.tool_name, path=str(path), attempts=attempts, report=report)
 
             if report.stage == "consent":  # the user said no (or cannot be asked): never retry or re-prompt
-                raise SynthesisError(request.tool_name, attempts, report)
+                raise SynthesisError(request.tool_name, attempts, report, candidate)
             reason = (report.error or "").strip().splitlines()
             log.warning(
                 "Attempt %d for %s failed at %s: %s", attempts, request.tool_name, report.stage, reason[-1] if reason else ""

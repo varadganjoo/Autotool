@@ -72,6 +72,15 @@ def test_keychain_index_holds_names_only(home):
     assert load_tool_env(home, environ={}).names == ["COMPOSIO_API_KEY"]
 
 
+def test_concurrent_keychain_updates_keep_every_name(home):
+    from concurrent.futures import ThreadPoolExecutor
+
+    names = [f"SERVICE_{i}_API_KEY" for i in range(24)]
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        list(pool.map(lambda name: keychain_set(home, name, "dummy-value"), names))
+    assert keychain_names(home) == sorted(names)
+
+
 def test_keychain_rejects_invalid_names(home):
     with pytest.raises(ValueError, match="variable name"):
         keychain_set(home, "not a name", "v")

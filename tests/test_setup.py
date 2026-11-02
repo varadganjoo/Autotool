@@ -122,3 +122,15 @@ def test_removing_a_tool_revokes_its_approval(tmp_path, monkeypatch):
     approve(tmp_path, "t_tool", ["K"], "x = 1\n")
     assert main(["tools", "remove", "t_tool"]) == 0
     assert "t_tool" not in load_policy(tmp_path)["approvals"]
+
+
+def test_tools_list_works_before_and_after_creating_a_tool(tmp_path, monkeypatch, capsys):
+    from autotool.cli import main
+
+    monkeypatch.setenv("AUTOTOOL_HOME", str(tmp_path))
+    assert main(["tools", "list"]) == 0
+    assert "No tools yet" in capsys.readouterr().out
+    (tmp_path / "tools").mkdir()
+    (tmp_path / "tools" / "math_tool.py").write_text("x = 1\n")
+    assert main(["tools", "list"]) == 0
+    assert "math_tool  credentials: none" in capsys.readouterr().out

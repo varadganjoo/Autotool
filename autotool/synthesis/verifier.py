@@ -150,7 +150,9 @@ class ToolVerifier:
         started = time.monotonic()
         problem = static_check(code, self.tool_env.names)
         if problem:
-            return VerificationReport(ok=False, stage="static", error=problem, duration_s=time.monotonic() - started)
+            return VerificationReport(
+                ok=False, stage="static", error=self.tool_env.redact(problem), duration_s=time.monotonic() - started
+            )
         # Consent comes before any code runs with the keys, the smoke test included.
         declared = required_env(code)
         if not self.tool_env.is_approved(tool_name, declared, code) and not (
@@ -171,16 +173,21 @@ class ToolVerifier:
             )
 
         path = self.stage(tool_name, code)
+        tool_env = self.tool_env
         state: dict[str, Any] = {"stage": "startup"}
         with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as errlog:
             client = DynamicMCPClient(
-                path, server_name=tool_name, env=self.tool_env.env_for(code, self.env_overrides, tool=tool_name), errlog=errlog
+                path,
+                server_name=tool_name,
+                env=tool_env.env_for(code, self.env_overrides, tool=tool_name),
+                errlog=errlog,
+                code=code,
             )
             try:
                 # asyncio.timeout (not wait_for) keeps connect/close in one task,
                 # which anyio's task-bound cancel scopes in the MCP transport require.
                 async with asyncio.timeout(self.timeout_s):
-                    report = await self._exercise(client, state, primary_tool, smoke_arguments)
+                    report = await self._exercise(client, state, primary_tool, smoke_arguments, tool_env)
             except TimeoutError:
                 report = self._fail(state, f"Timed out after {self.timeout_s:.0f}s during '{state['stage']}'")
             except Exception:
@@ -191,13 +198,7 @@ class ToolVerifier:
         path.unlink(missing_ok=True)
         report.duration_s = time.monotonic() - started
         # Everything in the report can reach the LLM (repair prompt, events): scrub secret values.
-        redact = self.tool_env.redact
-        report.error, report.stderr, report.smoke_output = (
-            redact(report.error),
-            redact(report.stderr),
-            redact(report.smoke_output),
-        )
-        return report
+        return VerificationReport.model_validate(tool_env.redact_json(report.model_dump()))
 
     @staticmethod
     def _fail(state: dict[str, Any], error: str) -> VerificationReport:
@@ -216,6 +217,7 @@ class ToolVerifier:
         state: dict[str, Any],
         primary_tool: str | None,
         smoke_arguments: dict[str, Any] | None,
+        tool_env: ToolEnv,
     ) -> VerificationReport:
         state["stage"] = "startup"
         await client.connect()
@@ -248,5 +250,5 @@ class ToolVerifier:
             tools=tools,
             smoke_tool=target.name,
             smoke_arguments=args,
-            smoke_output=self.tool_env.redact(output)[:2000],  # redact first: a cut key would leak its prefix
+            smoke_output=tool_env.redact(output)[:2000],  # redact first: a cut key would leak its prefix
         )

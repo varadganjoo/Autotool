@@ -3,6 +3,7 @@ synthesis requests/results and verification reports."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from typing import Any, Literal
@@ -26,10 +27,18 @@ class MCPToolDescriptor(BaseModel):
     description: str = ""
     input_schema: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
 
+    @field_validator("server", "name")
+    @classmethod
+    def _valid_name(cls, value: str) -> str:
+        if not FUNCTION_NAME_RE.fullmatch(value):
+            raise ValueError(f"invalid tool name: {value!r}")
+        return value
+
     @property
     def qualified_name(self) -> str:
         """Globally unique name exposed to the LLM: ``<server>__<tool>``."""
-        return f"{self.server}{NAMESPACE_SEP}{self.name}"[:64]
+        name = f"{self.server}{NAMESPACE_SEP}{self.name}"
+        return name if len(name) <= 64 else f"{name[:51]}_{hashlib.sha256(name.encode()).hexdigest()[:12]}"
 
     def to_anthropic(self) -> dict[str, Any]:
         return {

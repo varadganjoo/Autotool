@@ -76,7 +76,7 @@ def _keys(args: argparse.Namespace) -> int:
 def _tools(args: argparse.Namespace) -> int:
     tools_dir = autotool_home() / "tools"
     home = autotool_home()
-    pending = home / ".staging" / "pending" / f"{args.name}.py"
+    pending = home / ".staging" / "pending" / f"{args.name}.py" if args.action != "list" else None
     if args.action == "approve":
         # Approve exactly the code the agent submitted (pending) or, failing that, the cached tool.
         source = pending if pending.exists() else tools_dir / f"{args.name}.py"

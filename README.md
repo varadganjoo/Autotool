@@ -104,7 +104,9 @@ Pick any of these places (the first match wins):
 
 A new key can be used by the next tool your agent creates, with no restart. Your agent's tool list
 shows the new name after its next refresh, and a cached tool that was skipped for a missing key
-loads on the next restart. `autotool keys list` shows names. `autotool tools list` shows
+loads on the next restart. Removing keys, revoking approval or deleting a mounted tool takes effect
+on the server's next tool-list or tool-call request. Calls already in flight may finish.
+`autotool keys list` shows names. `autotool tools list` shows
 which tools hold which credentials. If a tool needs a key you don't have, your agent is told
 exactly what to run (`autotool keys add STRIPE_API_KEY`).
 
@@ -173,6 +175,10 @@ autotool tools revoke tavily_tool
 autotool serve --dangerously-allow-all-tools   # never ask (or AUTOTOOL_CONSENT=dangerously-allow-all)
 ```
 
+Modern approval continuations expire after ten minutes and are bound to the exact request and
+current policy revision. Revoking an approval invalidates old continuations. Model-assisted
+synthesis preserves the same candidate through approval and continues its repair loop afterward.
+
 `--dangerously-allow-all-tools` gives every tool the credentials it declares without asking.
 Use it for CI, or if you'd rather not approve tools. The guard and host allowlists still apply,
 and the server logs a warning at startup.
@@ -186,6 +192,10 @@ autotool keys allow GITHUB_TOKEN api.github.com "*.githubusercontent.com"
 autotool keys allow TAVILY_API_KEY          # no hosts: remove the limit
 ```
 
+When a tool declares several restricted keys, it may reach only the host patterns explicitly
+present in **every** key's allowlist. Wildcards must match exactly across lists. Disjoint lists
+permit only loopback; split that capability into separate tools instead of widening either key.
+
 **The guard (on by default, optional).** Every tool runs under a Python audit hook that the tool
 cannot remove. It enforces the allowlists and blocks:
 - subprocesses and shell commands;
@@ -195,8 +205,11 @@ cannot remove. It enforces the allowlists and blocks:
 - creating, changing or deleting anything outside the temp directory.
 
 This applies to every tool, including ones that declare no keys.
+Each process executes a captured copy of its approved source in its own temporary directory,
+which is removed when the connection closes. Tool scripts must be self-contained; use declared
+environment variables for settings rather than files relative to the shared tool cache.
 
-It is a guard, not a jail: native code or interpreter bugs can get past it. If AutoTool already
+It is a guard, not a jail: Python introspection, native code or interpreter bugs can get past it. If AutoTool already
 runs inside a sandbox (a container, a VM, a devcontainer), turn it off:
 `autotool serve --sandbox off` (or `AUTOTOOL_SANDBOX=off` in your host's MCP config). Only an
 explicit `off`, `0`, `false` or `no` turns it off; anything else keeps it on. Host
@@ -214,7 +227,15 @@ allowlists are then not enforced; consent still is.
 
 For a hard boundary, run AutoTool in a container with the guard off.
 
+The guard also permits reads of files outside its explicit protected list. It does not isolate
+untrusted users, protect all local documents, enforce CPU/RAM/disk quotas, or prevent all network
+exfiltration. Loopback services and allowed hosts must be trusted. For generated code you do not
+trust, use an OS sandbox with minimal filesystem mounts and network permissions. Do not expose
+this stdio server as a public, multi-user service without a separate authenticated isolation layer.
+
 The design and its evaluation are written up in [the paper](https://github.com/varadganjoo/Autotool/blob/main/paper/autotool.md).
+The [production review](docs/production-review.md) records the current evidence and boundaries;
+the [next-capability proposal](docs/shared-memory-proposal.md) covers trusted reuse across agents.
 
 ## Hosts
 
