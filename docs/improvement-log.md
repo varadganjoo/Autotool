@@ -27,6 +27,12 @@ entry without bypassing approval. The handoff test invokes the reused tool and g
 In a separate core-only virtual environment, the rebuilt wheel also returned `42` from a
 native tool call on the original reader connection after refresh.
 
+**Delivery and checks.** Ruff lint and formatting, strict Twine checks on the wheel and
+source archive, `pip check` on the isolated wheel, the tracked-file secret scan, and
+`pip-audit` passed locally. The [implementation commit](https://github.com/varadganjoo/Autotool/commit/144ddf803243af80a024c8d8e298e8b33d137d65)
+and [pull request checks](https://github.com/varadganjoo/Autotool/pull/2/checks) record the
+delivered change and cross-platform verification.
+
 **Limits.** Each explicit refresh tries the existing shared cache and can start Python
 processes. Failed entries are logged and retried on a later explicit refresh. The cache
 is a local trust boundary. No live Claude or ChatGPT integration was exercised here.
