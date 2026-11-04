@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add `refresh_tools` to reuse capabilities saved by another running host and retry skipped
+  cached tools under the current credential policy.
+
 ## 0.1.1 — shared-host reliability and security
 
 - Fix `autotool tools list` crashing before it could inspect the tool cache.

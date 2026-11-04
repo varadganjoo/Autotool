@@ -108,6 +108,59 @@ async def test_create_tool_reports_verification_failure_to_the_agent(tmp_path):
         assert "math_tool__add" not in await names(session)
 
 
+async def test_refresh_tools_reuses_a_tool_created_by_another_running_host(tmp_path, mode):
+    import anyio
+
+    home = tmp_path / "home"
+    notes: list[str] = []
+    async with autotool_session(home, notes=notes, mode=mode) as reader, autotool_session(home, mode=mode) as writer:
+        assert "math_tool__add" not in await names(reader)
+        created = await writer.call_tool("create_tool", {"name": "math_tool", "code": GOOD})
+        assert not created.is_error, text(created)
+        assert "math_tool__add" not in await names(reader)
+
+        if mode == "legacy":
+            refreshed = await reader.call_tool("refresh_tools", {})
+            assert not refreshed.is_error, text(refreshed)
+            assert notes == ["tools/list_changed"]
+        else:
+            async with reader.listen(tools_list_changed=True) as events:
+                refreshed = await reader.call_tool("refresh_tools", {})
+                assert not refreshed.is_error, text(refreshed)
+                with anyio.fail_after(10):
+                    await events.__anext__()
+
+        assert "math_tool__add" in text(refreshed)
+        assert "math_tool__add" in await names(reader)
+        result = await reader.call_tool("run_tool", {"name": "math_tool__add", "arguments": {"a": 40, "b": 2}})
+        assert not result.is_error and text(result) == "42"
+        repeated = await reader.call_tool("refresh_tools", {})
+        assert not repeated.is_error and "math_tool__add" not in text(repeated)
+
+
+async def test_refresh_tools_skips_broken_cache_and_requires_existing_approval(tmp_path):
+    from autotool.core.policy import approve, revoke
+
+    home = tmp_path / "home"
+    (home / "tools").mkdir(parents=True)
+    (home / ".env").write_text("REVIEW_API_KEY=dummy-value-0123456789\n")
+    code = GOOD.replace("mcp = MCPServer", 'REQUIRED_ENV = ["REVIEW_API_KEY"]\nmcp = MCPServer')
+    async with autotool_session(home) as reader:
+        (home / "tools" / "math_tool.py").write_text(code)
+        (home / "tools" / "broken_tool.py").write_text(CRASHES_ON_IMPORT)
+        (home / "tools" / "other_tool.py").write_text(GOOD)
+        first = await reader.call_tool("refresh_tools", {})
+        assert not first.is_error, text(first)
+        assert "other_tool__add" in text(first) and "math_tool__add" not in await names(reader)
+
+        approve(home, "math_tool", ["REVIEW_API_KEY"], code)
+        approved = await reader.call_tool("refresh_tools", {})
+        assert not approved.is_error and "math_tool__add" in text(approved)
+        revoke(home, "math_tool")
+        revoked = await reader.call_tool("refresh_tools", {})
+        assert not revoked.is_error and "math_tool__add" not in await names(reader)
+
+
 async def test_create_tool_rejects_bad_names(tmp_path):
     async with autotool_session(tmp_path / "home") as session:
         result = await session.call_tool("create_tool", {"name": "../evil", "code": GOOD})
