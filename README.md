@@ -64,7 +64,7 @@ frontier ones. `AUTOTOOL_PROVIDER=openai` keeps OpenAI's Responses API even with
 
 ```python
 async with autotool.connect() as client:  # starts AutoTool as an MCP server
-    listed = await client.list_tools()  # create_tool, run_tool, every tool created so far
+    listed = await client.list_tools()  # AutoTool commands and tools mounted in this session
     tools = autotool.openai_tools(listed)  # or autotool.anthropic_tools(listed)
     result = await client.call_tool(name, arguments)  # whatever your model asked for
 ```
@@ -89,6 +89,16 @@ Next time, the tool is already there.
 are backed up to `.bak` before editing. Existing entries keep their `env` block, and an existing
 Claude Code or Codex entry is left untouched.
 
+## Reuse tools across running hosts
+
+If another running host creates a tool in the same AutoTool home, ask your agent to call
+`refresh_tools`. This loads tools from the shared cache without restarting the session or
+restarting unchanged tools. The response includes new tool names for `run_tool`, and hosts
+that handle tool-list change notifications can pick them up as native tools.
+
+`refresh_tools` starts cached Python scripts under the same credential policy as startup.
+Keep the shared tools directory under your control. Check the server log for skipped entries.
+
 ## Adding credentials
 
 You add environment variables. AutoTool offers their **names** to your agent, and a created tool
@@ -103,9 +113,10 @@ Pick any of these places (the first match wins):
 | Any file | `autotool serve --env-file path/to/.env` |
 
 A new key can be used by the next tool your agent creates, with no restart. Your agent's tool list
-shows the new name after its next refresh, and a cached tool that was skipped for a missing key
-loads on the next restart. Removing keys, revoking approval or deleting a mounted tool takes effect
-on the server's next tool-list or tool-call request. Calls already in flight may finish.
+shows the new name on the next listing. After adding the key and granting any required approval,
+call `refresh_tools` to retry a skipped tool. Removing keys, revoking approval or deleting a
+mounted tool takes effect on the server's next tool-list or tool-call request. Calls already in
+flight may finish.
 `autotool keys list` shows names. `autotool tools list` shows
 which tools hold which credentials. If a tool needs a key you don't have, your agent is told
 exactly what to run (`autotool keys add STRIPE_API_KEY`).

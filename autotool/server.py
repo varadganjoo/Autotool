@@ -6,6 +6,7 @@ connects over stdio and gets:
 - ``create_tool``: the agent writes an MCP tool script (MCPServer); AutoTool verifies it in a subprocess, gives
   it only the credentials it declares, mounts it and announces it with ``tools/list_changed``;
 - ``synthesize_tool`` (only when a model key is configured): AutoTool writes the code itself;
+- ``refresh_tools``: mounts tools saved by other hosts without restarting this one;
 - ``run_tool``: calls any mounted tool by name, for hosts that do not refresh their tool list;
 - every mounted tool as a native tool, e.g. ``tavily_tool__search``.
 """
@@ -48,6 +49,7 @@ log = logging.getLogger(__name__)
 
 CREATE_TOOL = "create_tool"
 RUN_TOOL = "run_tool"
+REFRESH_TOOLS = "refresh_tools"
 SYNTHESIZE_TOOL = "synthesize_tool"
 MODERN_PROTOCOL = "2026-07-28"  # servers no longer send requests; consent rides on InputRequiredResult
 _CONSENT_SCHEMA = {
@@ -177,6 +179,7 @@ class AutoToolServer:
         create = types.Tool(
             name=CREATE_TOOL,
             description=(
+                "If you expect a tool saved by another host, call refresh_tools before recreating it. "
                 "Create a new tool when none of your current tools can do what the task needs (a web API, live "
                 "data, a computation). Write a complete Python MCP tool server script (MCPServer); AutoTool verifies it in a "
                 "guarded subprocess, injects only the credentials it declares, and mounts it: its tools appear "
@@ -205,7 +208,13 @@ class AutoToolServer:
                 "required": ["name"],
             },
         )
-        tools = [create, run]
+        refresh = types.Tool(
+            name=REFRESH_TOOLS,
+            description="Load tools saved to the shared AutoTool cache by another host, or retry tools after fixing "
+            "their credentials. Returns newly available tool names, which you can call via run_tool.",
+            input_schema={"type": "object", "properties": {}},
+        )
+        tools = [create, run, refresh]
         if self.engine:
             tools.append(
                 types.Tool(
@@ -251,6 +260,13 @@ class AutoToolServer:
             return await self.create_tool(arguments, responses, state)
         if name == SYNTHESIZE_TOOL and self.engine:
             return await self.synthesize_tool(arguments, responses, state)
+        if name == REFRESH_TOOLS:
+            mounted = set(await self.registry.load_cached(only_unmounted=True))
+            names = sorted(d.qualified_name for d in self.registry.descriptors() if d.server in mounted)
+            if not names:
+                return _result("No new cached tools available. See the server log for any skipped tools.")
+            await self._notify_tools_changed()
+            return _result(f"Newly available tools: {', '.join(names)}")
         if name == RUN_TOOL:
             name, arguments = str(arguments.get("name", "")), arguments.get("arguments") or {}
         result = await self.registry.call("call", name, arguments)
@@ -319,12 +335,15 @@ class AutoToolServer:
             tools = await self.registry.mount(path)
         except Exception as exc:
             return _result(self.tool_env.redact(f"Verified, but mounting failed: {type(exc).__name__}: {exc}"), is_error=True)
+        await self._notify_tools_changed()
+        described = [{"name": t.qualified_name, "description": t.description, "input_schema": t.input_schema} for t in tools]
+        return _result(f"Tool server '{path.stem}' {origin} and mounted. New tools:\n{json.dumps(described, indent=2)}")
+
+    async def _notify_tools_changed(self) -> None:
         await self.bus.publish(ToolsListChanged())  # 2026-era clients listen through subscriptions/listen
         ctx = _ctx.get(None)
         if ctx is not None and not _modern(ctx):
             await ctx.session.send_tool_list_changed()
-        described = [{"name": t.qualified_name, "description": t.description, "input_schema": t.input_schema} for t in tools]
-        return _result(f"Tool server '{path.stem}' {origin} and mounted. New tools:\n{json.dumps(described, indent=2)}")
 
     @staticmethod
     def _failure(summary: str, missing: list[str]) -> str:

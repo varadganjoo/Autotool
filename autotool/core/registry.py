@@ -41,17 +41,20 @@ class ToolRegistry:
 
     # ---- mounting -------------------------------------------------------
 
-    async def load_cached(self) -> list[str]:
-        """Mount every verified script already in ``tools_dir``, concurrently (hosts time out
-        slow MCP servers). Broken or hanging entries are logged and skipped."""
+    async def load_cached(self, *, only_unmounted: bool = False) -> list[str]:
+        """Mount cached scripts concurrently. Broken or hanging entries are logged and skipped."""
         mounted: list[str] = []
 
         async def one(path: Path) -> None:
             try:
-                await self.mount(path)
-                mounted.append(path.stem)
+                path = path.resolve()
+                async with self._locks[path.stem]:
+                    if only_unmounted and self.has_server(path.stem):
+                        return
+                    await self._mount(path)
+                    mounted.append(path.stem)
             except Exception as exc:
-                log.warning("Skipping cached tool %s: %s", path.name, exc)
+                log.warning("Skipping cached tool %s: %s", path.name, self.tool_env.redact(str(exc)))
 
         async with anyio.create_task_group() as tg:
             for path in sorted(self.tools_dir.glob("*.py")):
