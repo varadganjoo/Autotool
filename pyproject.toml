@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "autotool-mcp"
-version = "0.1.1"
+version = "0.1.2"
 description = "A self-extending tool layer for any AI agent: your agent writes the tools it needs; AutoTool verifies, guards and mounts them, and gives them API keys by name only."
 readme = "README.md"
 license = "MIT"

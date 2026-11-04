@@ -1,6 +1,6 @@
 """AutoTool: a self-extending tool layer for any AI agent, served over MCP."""
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 __all__ = ["anthropic_tools", "connect", "openai_tools", "run_agent"]
 
 

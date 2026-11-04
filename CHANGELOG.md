@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.2 — live tool reuse
 
 - Add `refresh_tools` to reuse capabilities saved by another running host and retry skipped
   cached tools under the current credential policy.
