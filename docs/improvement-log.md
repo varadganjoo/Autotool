@@ -37,6 +37,16 @@ source builds, strict Twine checks, both isolated installations' `pip check`, th
 `pip-audit` scan and the tracked-file secret scan passed. The secret baseline update
 only moves a reviewed README placeholder's line number. No static type gate is configured.
 
+**Delivery.** [Implementation commit 9892330](https://github.com/varadganjoo/Autotool/commit/989233007298d0c01558a180457f17e3f8e90b16)
+is proposed in [PR #3](https://github.com/varadganjoo/Autotool/pull/3). Its checks record
+cross-platform results for the submitted revision.
+
+The previously requested [0.1.2 release](https://pypi.org/project/autotool-mcp/0.1.2/)
+also completed its existing protected publishing workflow. A fresh PyPI installation
+verified tool creation in one client and refresh plus a successful call returning `42`
+in a second client that was already connected. The recovery fix above is proposed work
+for a subsequent release.
+
 **Limits.** Recovery follows an observed call exception. A process that dies while idle
 can still appear in listings until a call discovers its failed connection. Explicit reload
 starts a fresh process and loses its transient state. The original call may have completed
