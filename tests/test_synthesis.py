@@ -323,3 +323,71 @@ async def test_orchestrator_synthesizes_then_uses_new_tool(tmp_path):
         await registry.load_cached()
         run2 = await Orchestrator(provider2, registry, SynthesisEngine(provider2, tools_dir=tools_dir)).run("1+1?")
     assert run2.answer == '"2"' and run2.synthesized == []
+
+
+async def test_registry_keeps_a_worker_after_a_tool_reports_an_error(tmp_path):
+    script = tmp_path / "math_tool.py"
+    script.write_text(RAISES)
+    async with ToolRegistry(tmp_path) as registry:
+        await registry.mount(script)
+        original = registry._clients["math_tool"]
+        result = await registry.call("1", "math_tool__add", {"a": 1, "b": 2})
+        assert result.is_error and "upstream exploded" in result.content
+        assert registry._clients["math_tool"] is original
+
+
+async def test_late_call_failure_does_not_unload_a_replacement_worker(tmp_path, monkeypatch):
+    import anyio
+
+    script = tmp_path / "math_tool.py"
+    script.write_text(GOOD)
+    started, finish = anyio.Event(), anyio.Event()
+    results = []
+    calls = []
+
+    async def fail(tool, arguments):
+        calls.append(tool)
+        started.set()
+        await finish.wait()
+        raise RuntimeError("old connection failed")
+
+    async def call():
+        results.append(await registry.call("1", "math_tool__add", {"a": 1, "b": 2}))
+
+    async with ToolRegistry(tmp_path) as registry:
+        await registry.mount(script)
+        monkeypatch.setattr(registry._clients["math_tool"], "call_tool", fail)
+        async with anyio.create_task_group() as group:
+            group.start_soon(call)
+            await started.wait()
+            await registry.mount(script)
+            replacement = registry._clients["math_tool"]
+            finish.set()
+        assert len(results) == 1 and results[0].is_error
+        assert calls == ["add"]
+        assert registry._clients["math_tool"] is replacement
+        assert (await registry.call("2", "math_tool__add", {"a": 40, "b": 2})).content == "42"
+
+
+async def test_call_timeout_unloads_the_worker_and_keeps_its_cached_source(tmp_path):
+    code = server(
+        '''
+        import time
+
+        @mcp.tool()
+        def run(delay: bool = False) -> str:
+            """Return a value after an optional delay."""
+            if delay:
+                time.sleep(120)
+            return "alive"
+        '''
+    )
+    script = tmp_path / "math_tool.py"
+    script.write_text(code)
+    async with ToolRegistry(tmp_path, call_timeout_s=1.0) as registry:
+        await registry.mount(script)
+        failed = await registry.call("1", "math_tool__run", {"delay": True})
+        assert failed.is_error and "side effects" in failed.content
+        assert registry.servers == [] and script.read_text() == code
+        assert await registry.load_cached(only_unmounted=True) == ["math_tool"]
+        assert (await registry.call("2", "math_tool__run", {"delay": False})).content == "alive"

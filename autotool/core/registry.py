@@ -177,8 +177,16 @@ class ToolRegistry:
         try:
             result = await client.call_tool(tool, arguments)
         except Exception as exc:
+            async with self._locks[server]:
+                if self._clients.get(server) is client:
+                    await self.unmount(server)
             return ToolResult(
-                call_id=call_id, content=tool_env.redact(f"Tool call failed: {type(exc).__name__}: {exc}"), is_error=True
+                call_id=call_id,
+                content=tool_env.redact(
+                    f"Tool call failed: {type(exc).__name__}: {exc}\n"
+                    "Reload the cached tool before retrying. Check whether the failed call had side effects first."
+                ),
+                is_error=True,
             )
         content = tool_env.redact(render_call_result(result) or "(empty result)")
         return ToolResult(call_id=call_id, content=content, is_error=bool(result.is_error))

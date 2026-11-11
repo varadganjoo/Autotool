@@ -1,5 +1,52 @@
 # Weekly AutoTool improvements
 
+## Discovery / aha — 2026-11-11
+
+We expected `refresh_tools` to recover a cached capability after its worker crashed.
+Dogfooding the published 0.1.2 in a fresh Windows/Python 3.11 virtual environment showed
+that it returned “No new cached tools available” and the capability stayed unusable.
+The registry retains the dead connection after a call raises. Reconciliation checks source
+and credentials, while refresh skips every registered worker. A remembered schema can
+outlive the process that could execute it.
+
+**Ideas considered.** Search cached capabilities without starting processes, evict idle
+workers, or repair the existing failure path. This week's new evidence selected recovery.
+Search and eviction still need metadata and lifecycle decisions beyond this small fix.
+
+**Implementation and acceptance.** When a call raises, unload its worker under the
+existing per-server lock, provided it is still that same connection. Return the failure
+once with a reminder to inspect side effects before retrying. `refresh_tools` can then
+reload the cached source through the existing credential policy. A late failure from a
+replaced connection must leave the replacement running. A tool-reported application
+error must leave its working process registered. Timeouts must preserve cached source
+and allow an explicit reload. No dependencies, permissions or storage formats were added.
+
+**Before and after.** Both real stdio crash-recovery tests failed on the original code
+because refresh skipped the dead worker. Both passed after the fix. Separate real-process
+checks cover application errors, a late call failure during replacement, and timeout
+recovery. The concurrency check also asserts the failing invocation is executed once.
+Run `python -m pytest -q tests/test_server.py -k recovers_a_worker` and
+`python -m pytest -q tests/test_synthesis.py -k "keeps_a_worker or late_call_failure or call_timeout_unloads"`.
+An isolated installation of the candidate wheel recovered the same crashed capability
+through the public client API and returned `alive`. The published 0.1.2 baseline failed
+that same probe. These compare behavior, not performance.
+
+**Verification.** The full offline suite passed with 168 tests and one skip, then the
+additional timeout regression passed separately. Ruff lint and formatting, wheel and
+source builds, strict Twine checks, both isolated installations' `pip check`, the current
+`pip-audit` scan and the tracked-file secret scan passed. The secret baseline update
+only moves a reviewed README placeholder's line number. No static type gate is configured.
+
+**Limits.** Recovery follows an observed call exception. A process that dies while idle
+can still appear in listings until a call discovers its failed connection. Explicit reload
+starts a fresh process and loses its transient state. The original call may have completed
+external side effects before failing, so the caller must decide whether to invoke it again.
+Live Claude/ChatGPT apps, hostile-code OS isolation and memory benchmarks are outside this
+fix. No speed or memory improvement is claimed.
+
+**Next question.** Can discovery distinguish saved, running and healthy capabilities
+without executing arbitrary tool code or adding a process per catalog entry?
+
 ## Discovery / aha — 2026-11-04
 
 We expected two running MCP hosts sharing an AutoTool home to see a tool once either one

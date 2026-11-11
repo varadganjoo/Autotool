@@ -99,6 +99,10 @@ that handle tool-list change notifications can pick them up as native tools.
 `refresh_tools` starts cached Python scripts under the same credential policy as startup.
 Keep the shared tools directory under your control. Check the server log for skipped entries.
 
+If a tool call loses its connection or times out, AutoTool unloads that worker. Check whether
+the call already changed anything, then call `refresh_tools` to reload its cached source before
+retrying. An ordinary tool error leaves the worker available.
+
 ## Adding credentials
 
 You add environment variables. AutoTool offers their **names** to your agent, and a created tool
