@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Unload failed tool connections so `refresh_tools` can recover their cached capabilities.
+  Keep replacement workers alive when an older in-flight call fails.
+
 ## 0.1.2 — live tool reuse
 
 - Add `refresh_tools` to reuse capabilities saved by another running host and retry skipped

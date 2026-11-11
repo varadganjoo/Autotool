@@ -574,3 +574,30 @@ async def test_pending_approval_code_is_cleared_once_the_tool_is_created(tmp_pat
     async with in_memory(home, True, [], consent="prompt") as (_, client):
         assert not (await client.call_tool("create_tool", {**ACME_ARGS, "code": HEADER_DRAFT})).is_error
     assert not (home / ".staging" / "pending" / "acme_tool.py").exists()
+
+
+async def test_refresh_tools_recovers_a_worker_that_died_during_a_call(tmp_path, mode):
+    from tests.test_synthesis import server
+
+    code = server(
+        '''
+        import os
+
+        @mcp.tool()
+        def run(crash: bool = False) -> str:
+            """Return a value, or simulate a worker process crash."""
+            if crash:
+                os._exit(7)
+            return "alive"
+        ''',
+        name="worker_tool",
+    )
+    async with autotool_session(tmp_path / "home", mode=mode) as client:
+        created = await client.call_tool("create_tool", {"name": "worker_tool", "code": code, "test_arguments": {"crash": False}})
+        assert not created.is_error, text(created)
+        failed = await client.call_tool("worker_tool__run", {"crash": True})
+        assert failed.is_error, text(failed)
+        refreshed = await client.call_tool("refresh_tools", {})
+        assert not refreshed.is_error and "worker_tool__run" in text(refreshed), text(refreshed)
+        recovered = await client.call_tool("run_tool", {"name": "worker_tool__run", "arguments": {"crash": False}})
+        assert not recovered.is_error and text(recovered) == "alive", text(recovered)
